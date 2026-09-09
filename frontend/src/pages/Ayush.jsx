@@ -4,6 +4,7 @@ import { Mic, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Volume2, Volum
 
 import { useGlobalState } from '../context/GlobalStateContext';
 import { evaluateVoiceMatch } from '../utils/voiceMatcher';
+import { API_BASE } from '../config/api';
 
 const Ayush = () => {
   const navigate = useNavigate();
@@ -166,7 +167,7 @@ const Ayush = () => {
       return;
     }
     // Fetch questions
-    fetch('http://localhost:8000/api/ayush/questions')
+    fetch(`${API_BASE}/api/ayush/questions`)
       .then((res) => res.json())
       .then((data) => {
         if (data.sections) {
@@ -344,7 +345,7 @@ const Ayush = () => {
     setError(null);
     const answersToSend = overrideAnswers || answers;
     console.log('[AYUSH] Submitting assessment with answers count:', answersToSend.length);
-    fetch('http://localhost:8000/api/ayush/submit', {
+    fetch(`${API_BASE}/api/ayush/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, answers: answersToSend })

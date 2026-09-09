@@ -4,8 +4,7 @@ import {
   Check, Mail, Phone, X, AlertCircle, CheckSquare, Loader2
 } from 'lucide-react';
 import { useGlobalState } from '../context/GlobalStateContext';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config/api';
 
 const CONSENT_ITEMS = [
   {

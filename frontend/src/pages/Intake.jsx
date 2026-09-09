@@ -4,6 +4,7 @@ import { Mic, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle,
 
 import { useGlobalState } from '../context/GlobalStateContext';
 import { evaluateVoiceMatch } from '../utils/voiceMatcher';
+import { API_BASE } from '../config/api';
 
 // Module-level dictionary — available inside useEffect for auto-TTS
 const INTAKE_I18N = {
@@ -220,7 +221,7 @@ const Intake = () => {
       setLoading(false);
       return;
     }
-    fetch(`http://localhost:8000/api/intake/${complaintType}/tree`)
+    fetch(`${API_BASE}/api/intake/${complaintType}/tree`)
       .then(res => res.json())
       .then(data => {
         setTree(data);
@@ -481,7 +482,7 @@ const Intake = () => {
     setError(null);
     const answersToSend = overrideAnswers || answers;
     console.log('[INTAKE] Submitting intake with answers:', answersToSend);
-    fetch(`http://localhost:8000/api/intake/${complaintType}?session_id=${sessionId}`, {
+    fetch(`${API_BASE}/api/intake/${complaintType}?session_id=${sessionId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(answersToSend)

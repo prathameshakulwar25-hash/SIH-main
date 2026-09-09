@@ -7,8 +7,8 @@ import {
   ArrowLeft, RotateCcw, CheckCircle2, Loader2, Shield, QrCode, User
 } from 'lucide-react';
 import { JeevanBrand } from '../components/JeevanLogo';
+import { API_BASE } from '../config/api';
 
-const API_BASE = 'http://localhost:8000';
 const PHYSICIAN_PIN = '1234';
 
 const LANG_OPTIONS = [

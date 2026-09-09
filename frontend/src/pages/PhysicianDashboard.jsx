@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalState } from '../context/GlobalStateContext';
 import {
   Stethoscope, AlertTriangle, CheckCircle2, Clock, User, FileText,
   RefreshCw, ChevronDown, ChevronUp, Edit3, Save, Shield, ShieldCheck, LogOut,
   Pill, MessageSquare, Activity, HeartPulse, XCircle, Loader2, Printer,
-  Eye, RotateCcw, Sparkles, Download, QrCode, ExternalLink
+  Eye, RotateCcw, Sparkles, Download, QrCode, ExternalLink, Check, CheckCheck, Zap
 } from 'lucide-react';
 import AbhaCard from '../components/AbhaCard';
 import { JeevanLogoIcon } from '../components/JeevanLogo';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config/api';
 
 const URGENCY_CFG = {
   emergency: { badge: 'bg-red-100 border-red-300 text-red-700', row: 'border-l-4 border-red-500', label: '🚨 Emergency', dot: 'bg-red-500' },
@@ -28,6 +27,80 @@ const formatTime = (ts) => {
   try { return new Date(ts).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }); }
   catch { return ts; }
 };
+
+const cleanReportText = (text) => {
+  if (!text) return '';
+  return text
+    .replace(/\[INTAKE_COMPLETE\]/g, '')
+    .replace(/```json[\s\S]*?```/g, '')
+    .trim();
+};
+
+const CLINICAL_REVIEW_STEPS = [
+  {
+    id: 'chief_complaint',
+    step: 1,
+    title: 'Chief Complaint',
+    badge: 'Presenting Symptom',
+    description: 'Primary symptom, onset pattern, and acute acuity profile.',
+  },
+  {
+    id: 'hpi',
+    step: 2,
+    title: 'History of Present Illness (HPI)',
+    badge: 'SOCRATES Analysis',
+    description: 'Site, Onset, Character, Radiation, Associations, Time course, Severity.',
+  },
+  {
+    id: 'past_medical_surgical',
+    step: 3,
+    title: 'Past Medical & Surgical History',
+    badge: 'Comorbidities',
+    description: 'Hypertension, Diabetes, prior cardiac history, admissions or surgeries.',
+  },
+  {
+    id: 'drug_allergy',
+    step: 4,
+    title: 'Drug Allergies & Medications',
+    badge: 'Safety Checks',
+    description: 'Documented allergies (NKDA), active medications, interaction checks.',
+  },
+  {
+    id: 'family_history',
+    step: 5,
+    title: 'Family History',
+    badge: 'Genetic Risks',
+    description: 'Premature CVD, stroke, familial metabolic and hereditary disorders.',
+  },
+  {
+    id: 'personal_history',
+    step: 6,
+    title: 'Personal & Social History',
+    badge: 'Lifestyle & Habits',
+    description: 'Occupational stress, sleep patterns, dietary routines, substance usage.',
+  },
+  {
+    id: 'ros',
+    step: 7,
+    title: 'Review of Systems (ROS)',
+    badge: 'Systemic Inquiry',
+    description: 'Cardiovascular, respiratory, GI, neurological, constitutional screen.',
+  },
+  {
+    id: 'prior_investigations',
+    step: 8,
+    title: 'Prior Investigations & Labs',
+    badge: 'OCR Records',
+    description: 'Extracted laboratory test values, prescriptions & diagnostic reports.',
+  },
+  {
+    id: 'ayush_profile',
+    step: 9,
+    title: 'AYUSH Constitutional Assessment',
+    badge: 'Prakriti & Agni',
+    description: 'Tridosha balance (Vata/Pitta/Kapha), Digestive Fire (Agni), Koshtha.',
+  }
+];
 
 // Formatted Markdown Renderer for Physician Reports
 const ReportMarkdownRenderer = ({ text }) => {
@@ -152,6 +225,15 @@ const PhysicianDashboard = () => {
   const [reportSuccessMsg, setReportSuccessMsg] = useState('');
   const [editorTab, setEditorTab] = useState('edit'); // 'edit' | 'preview'
 
+  // 9-Step Clinical Intake Review State
+  const [reviewSteps, setReviewSteps] = useState({});
+  const [savingStep, setSavingStep] = useState(false);
+  const [showAllSteps, setShowAllSteps] = useState(true);
+  const [editingStep, setEditingStep] = useState(null);
+  const [stepAmendmentText, setStepAmendmentText] = useState('');
+  const [savingStepAmend, setSavingStepAmend] = useState(false);
+  const reportEditorRef = useRef(null);
+
   const fetchReports = useCallback(async () => {
     setLoadingList(true);
     try {
@@ -174,7 +256,10 @@ const PhysicianDashboard = () => {
       const data = await res.json();
       setDetail(data);
       setNotes(data.physician_notes || '');
-      const reportText = data.summary?.clinician_summary || data.summary?.summary_text || '';
+      const steps = data.review_steps || data.summary?.physician_review_steps || {};
+      setReviewSteps(steps);
+      const rawText = data.summary?.clinician_summary || data.summary?.summary_text || '';
+      const reportText = cleanReportText(rawText);
       setEditedReportText(reportText);
       setOriginalReportText(reportText);
     } catch { setError('Could not load report detail.'); }
@@ -198,6 +283,65 @@ const PhysicianDashboard = () => {
       return base ? `${base}\n${snippet}` : snippet;
     });
     if (!isEditingReport) setIsEditingReport(true);
+  };
+
+  const handleReviewStep = async (stepId, status, note = '') => {
+    if (!selectedId) return;
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updatedSteps = {
+      ...reviewSteps,
+      [stepId]: {
+        status,
+        timestamp,
+        notes: note
+      }
+    };
+    setReviewSteps(updatedSteps);
+    try {
+      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          physician_id: 'physician-1',
+          review_steps: updatedSteps
+        })
+      });
+    } catch (err) {
+      console.warn('Could not persist review step:', err);
+    }
+  };
+
+  const handleApproveAllSteps = async () => {
+    if (!selectedId) return;
+    setSavingStep(true);
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updatedSteps = { ...reviewSteps };
+    CLINICAL_REVIEW_STEPS.forEach(s => {
+      if (!updatedSteps[s.id] || updatedSteps[s.id].status !== 'amended') {
+        updatedSteps[s.id] = {
+          status: 'accepted',
+          timestamp,
+          notes: ''
+        };
+      }
+    });
+    setReviewSteps(updatedSteps);
+    try {
+      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          physician_id: 'physician-1',
+          review_steps: updatedSteps
+        })
+      });
+      setReportSuccessMsg('All 9 clinical review steps successfully verified & approved.');
+      setTimeout(() => setReportSuccessMsg(''), 4000);
+    } catch (err) {
+      setError('Failed to approve review steps.');
+    } finally {
+      setSavingStep(false);
+    }
   };
 
   const handleVerify = async () => {
@@ -226,12 +370,81 @@ const PhysicianDashboard = () => {
     finally { setSavingNotes(false); }
   };
 
+  const handleOpenStepAmend = (step) => {
+    setEditingStep(step);
+    const existingNote = reviewSteps[step.id]?.notes || '';
+    if (existingNote) {
+      setStepAmendmentText(existingNote);
+    } else {
+      let prefill = '';
+      if (step.id === 'chief_complaint') {
+        prefill = formatClinicalTitle(detail?.intake_type || '');
+      } else if (step.id === 'ayush_profile' && detail?.ayush_profile) {
+        prefill = `Prakriti: ${detail.ayush_profile.prakriti || 'N/A'}, Agni: ${detail.ayush_profile.agni || 'N/A'}, Koshtha: ${detail.ayush_profile.koshtha || 'N/A'}`;
+      } else if (step.id === 'prior_investigations' && detail?.documents?.length > 0) {
+        const doc = detail.documents[0];
+        const meds = (doc.medications || []).map(m => typeof m === 'string' ? m : m.name).join(', ');
+        prefill = meds ? `Documented medications: ${meds}` : '';
+      }
+      setStepAmendmentText(prefill);
+    }
+  };
+
+  const handleSaveStepAmend = async () => {
+    if (!editingStep || !selectedId) return;
+    setSavingStepAmend(true);
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updatedSteps = {
+      ...reviewSteps,
+      [editingStep.id]: {
+        status: 'amended',
+        timestamp,
+        notes: stepAmendmentText.trim()
+      }
+    };
+    setReviewSteps(updatedSteps);
+
+    const noteSnippet = `\n- **[Doctor Amendment - ${editingStep.title}]:** ${stepAmendmentText.trim()}`;
+    const updatedReport = (editedReportText ? `${editedReportText.trim()}\n` : '') + noteSnippet;
+    setEditedReportText(updatedReport);
+
+    try {
+      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          physician_id: 'physician-1',
+          review_steps: updatedSteps
+        })
+      });
+      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          physician_id: 'physician-1',
+          clinician_summary: updatedReport
+        })
+      });
+      setReportSuccessMsg(`Step ${editingStep.step} (${editingStep.title}) amended and saved.`);
+      setTimeout(() => setReportSuccessMsg(''), 4000);
+      setEditingStep(null);
+    } catch (err) {
+      setError('Failed to save step amendment.');
+    } finally {
+      setSavingStepAmend(false);
+    }
+  };
+
   const handleStartEditReport = () => {
-    const current = detail?.summary?.clinician_summary || detail?.summary?.summary_text || '';
+    const raw = detail?.summary?.clinician_summary || detail?.summary?.summary_text || '';
+    const current = cleanReportText(raw);
     setEditedReportText(current);
     setIsEditingReport(true);
     setEditorTab('edit');
     setReportSuccessMsg('');
+    setTimeout(() => {
+      reportEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
   };
 
   const handleCancelEditReport = () => {
@@ -304,6 +517,10 @@ const PhysicianDashboard = () => {
   const clinicianSummaryText = summary.clinician_summary || summary.summary_text || '';
   const conversationHistory = summary.conversation_history || [];
   const isPhysicianEdited = summary.physician_edited;
+  const verifiedStepsCount = CLINICAL_REVIEW_STEPS.filter(
+    s => reviewSteps[s.id]?.status === 'accepted' || reviewSteps[s.id]?.status === 'amended'
+  ).length;
+  const allStepsVerified = verifiedStepsCount === CLINICAL_REVIEW_STEPS.length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
@@ -508,8 +725,181 @@ const PhysicianDashboard = () => {
                 )}
               </div>
 
-              {/* Clinical & AYUSH Encounter Report with Doctor Editing */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              {/* 9-Step Clinical Intake Review & Verification Panel */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-slate-900 font-bold text-sm sm:text-base">
+                          9-Step Clinical Intake Review
+                        </h3>
+                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                          allStepsVerified
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}>
+                          {verifiedStepsCount} / 9 Steps Verified
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Standardized NDHM / ABDM clinical domains. Review and verify each step prior to encounter sign-off.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleApproveAllSteps}
+                      disabled={savingStep}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs shadow-emerald-200 disabled:opacity-60 active:scale-95 cursor-pointer"
+                      title="Quickly verify all 9 standard clinical steps with one click"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      {savingStep ? 'Verifying...' : '⚡ Approve All 9 Steps'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSteps(v => !v)}
+                      className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-xs font-bold transition flex items-center gap-1"
+                      title={showAllSteps ? 'Collapse Step List' : 'Expand Step List'}
+                    >
+                      {showAllSteps ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200/60">
+                  <div
+                    className={`h-full transition-all duration-500 ${allStepsVerified ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                    style={{ width: `${(verifiedStepsCount / 9) * 100}%` }}
+                  />
+                </div>
+
+                {/* Steps Grid */}
+                {showAllSteps && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                    {CLINICAL_REVIEW_STEPS.map((step) => {
+                      const current = reviewSteps[step.id];
+                      const status = current?.status || 'pending';
+                      const isAccepted = status === 'accepted';
+                      const isAmended = status === 'amended';
+                      const isRejected = status === 'rejected';
+
+                      return (
+                        <div
+                          key={step.id}
+                          className={`p-3 rounded-xl border transition-all ${
+                            isAccepted
+                              ? 'bg-emerald-50/40 border-emerald-200'
+                              : isAmended
+                              ? 'bg-amber-50/40 border-amber-200'
+                              : isRejected
+                              ? 'bg-red-50/40 border-red-200'
+                              : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                isAccepted
+                                  ? 'bg-emerald-600 text-white'
+                                  : isAmended
+                                  ? 'bg-amber-600 text-white'
+                                  : isRejected
+                                  ? 'bg-red-600 text-white'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {step.step}
+                              </span>
+                              <h4 className="font-bold text-xs text-slate-900 leading-tight">
+                                {step.title}
+                              </h4>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 border ${
+                              isAccepted
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : isAmended
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : isRejected
+                                ? 'bg-red-100 text-red-800 border-red-300'
+                                : 'bg-white text-slate-600 border-slate-200'
+                            }`}>
+                              {isAccepted ? 'Confirmed' : isAmended ? 'Amended' : isRejected ? 'Disputed' : 'Pending'}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-snug">
+                            {step.description}
+                          </p>
+
+                          <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-200/50">
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {current?.timestamp ? `Reviewed at ${current.timestamp}` : 'AI-synthesized'}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleReviewStep(step.id, 'accepted')}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-0.5 ${
+                                  isAccepted
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300'
+                                }`}
+                                title="Accept and verify this step"
+                              >
+                                <Check className="w-3 h-3" />
+                                {isAccepted ? 'Verified' : 'Verify'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStepAmend(step)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-0.5 cursor-pointer active:scale-95 ${
+                                  isAmended
+                                    ? 'bg-amber-600 text-white shadow-xs'
+                                    : 'bg-white hover:bg-amber-50 text-amber-700 border border-amber-300'
+                                }`}
+                                title="Amend this specific clinical step"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleReviewStep(step.id, 'rejected', 'Disputed during physician review')}
+                                className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                                  isRejected
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-white hover:bg-red-50 text-red-700 border border-red-200'
+                                }`}
+                                title="Dispute this step"
+                              >
+                                <XCircle className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Doctor Amendment Note preview */}
+                          {isAmended && current?.notes && (
+                            <div className="mt-2 p-1.5 bg-amber-50/80 border border-amber-200/80 rounded-lg text-[11px] text-amber-900 flex items-start gap-1">
+                              <span className="font-bold shrink-0">Doctor Note:</span>
+                              <span className="truncate">{current.notes}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Clinical & AYUSH Encounter Report with Doctor-Friendly Note Editor */}
+              <div ref={reportEditorRef} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm scroll-mt-20">
                 <div className="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-100 gap-2">
                   <div className="flex items-center gap-2">
                     <FileText className="w-5 h-5 text-indigo-600" />
@@ -528,14 +918,14 @@ const PhysicianDashboard = () => {
                           <button
                             type="button"
                             onClick={() => setEditorTab('edit')}
-                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${editorTab === 'edit' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${editorTab === 'edit' ? 'bg-white text-teal-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
                           >
-                            <Edit3 className="w-3 h-3 inline mr-1" />Edit
+                            <Edit3 className="w-3 h-3 inline mr-1" />Doctor Note Editor
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditorTab('preview')}
-                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${editorTab === 'preview' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${editorTab === 'preview' ? 'bg-white text-teal-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
                           >
                             <Eye className="w-3 h-3 inline mr-1" />Live Preview
                           </button>
@@ -543,14 +933,14 @@ const PhysicianDashboard = () => {
                         <button
                           onClick={handleCancelEditReport}
                           disabled={savingReport}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold transition"
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={handleSaveReport}
                           disabled={savingReport}
-                          className="flex items-center gap-1 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm shadow-emerald-200 disabled:opacity-50"
+                          className="flex items-center gap-1 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm shadow-emerald-200 disabled:opacity-50 cursor-pointer"
                         >
                           {savingReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                           Save Changes
@@ -563,14 +953,14 @@ const PhysicianDashboard = () => {
                         </span>
                         <button
                           onClick={handleStartEditReport}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold transition shadow-xs"
-                          title="Edit clinical report if AI made any mistakes or omission"
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                          title="Edit clinical report"
                         >
                           <Edit3 className="w-3.5 h-3.5" />Edit Report
                         </button>
                         <button
                           onClick={() => window.open(`/summary/${selectedId}`, '_blank')}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-xl text-xs font-bold transition shadow-xs"
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
                           title="Open patient-facing clinical encounter report in a new tab"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />View Patient Report
@@ -581,40 +971,100 @@ const PhysicianDashboard = () => {
                 </div>
 
                 {isEditingReport ? (
-                  <div className="space-y-3">
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-4">
+                    {/* Doctor Mode Notice */}
+                    <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-3 text-xs text-teal-900 flex items-start gap-2.5">
+                      <Sparkles className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-bold">Doctor Correction Mode Active</p>
-                        <p className="text-amber-800 mt-0.5">
-                          You can modify, fix, or expand any clinical section below (Chief Complaints, History of Present Illness, Dashavidha Pariksha, ICD-10 Differential Diagnosis, or Treatment). Changes will be saved as the official clinical record.
+                        <p className="font-bold">Doctor Clinical Note Editor Active</p>
+                        <p className="text-teal-800 mt-0.5">
+                          You can edit complaints, clinical findings, ICD-10 differential assessment, or prescriptions below in normal medical text. Your changes update the patient's verified health record.
                         </p>
                       </div>
                     </div>
 
                     {editorTab === 'edit' ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={editedReportText}
-                          onChange={e => setEditedReportText(e.target.value)}
-                          rows={20}
-                          className="w-full font-mono text-xs sm:text-sm bg-slate-900 text-emerald-300 p-4 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent leading-relaxed"
-                          placeholder="Type or edit clinical report markdown here..."
-                        />
-                        <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-                          <span>{editedReportText.split('\n').length} lines · {editedReportText.length} characters</span>
+                      <div className="space-y-3">
+                        {/* Quick Clinical Formatting Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Insert:</span>
+                            <button
+                              type="button"
+                              onClick={() => insertIntoReport('**Observation:** ')}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
+                              title="Add bold heading"
+                            >
+                              <b>B</b> Bold
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertIntoReport('\n* ')}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
+                              title="Add bullet list"
+                            >
+                              • Bullet
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertIntoReport('\n### Clinical Assessment\n- **Diagnosis:** ')}
+                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 transition cursor-pointer"
+                              title="Add Diagnosis Section"
+                            >
+                              + Diagnosis
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertIntoReport('\n### Rx / Treatment Plan\n- **Medication:** ')}
+                              className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg text-xs font-bold text-teal-700 transition cursor-pointer"
+                              title="Add Treatment Section"
+                            >
+                              + Prescription
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertIntoReport('\n### Follow-Up & Red Flag Advice\n- Review in OPD after 3 days. Return immediately if symptoms worsen.')}
+                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 transition cursor-pointer"
+                              title="Add Advice"
+                            >
+                              + Advice
+                            </button>
+                          </div>
                           <button
                             type="button"
                             onClick={() => setEditedReportText(originalReportText)}
-                            className="text-slate-500 hover:text-slate-700 flex items-center gap-1 text-[11px]"
+                            className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-xs font-semibold px-2 py-1 cursor-pointer"
                           >
-                            <RotateCcw className="w-3 h-3" />Reset to initial draft
+                            <RotateCcw className="w-3.5 h-3.5" />Reset to Initial Draft
                           </button>
+                        </div>
+
+                        {/* Clean Medical Paper Document Note Area */}
+                        <div className="border border-slate-200 rounded-2xl bg-white shadow-xs overflow-hidden">
+                          <div className="bg-slate-50/60 px-4 py-2 border-b border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                            <span className="font-semibold flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-slate-400" />
+                              Official Clinical Report Document
+                            </span>
+                            <span>{editedReportText.split('\n').filter(Boolean).length} lines · {editedReportText.length} characters</span>
+                          </div>
+                          <textarea
+                            value={editedReportText}
+                            onChange={e => setEditedReportText(e.target.value)}
+                            rows={18}
+                            className="w-full font-sans text-sm text-slate-800 bg-white p-5 outline-none focus:ring-2 focus:ring-teal-500/20 leading-relaxed resize-y min-h-[360px]"
+                            placeholder="Type or update clinical report, assessment, prescriptions, or advice..."
+                          />
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 min-h-[300px]">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Live Formatted Preview</p>
+                      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs min-h-[350px]">
+                        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Live Formatted Clinical Document</p>
+                          <span className="text-xs text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full font-bold">
+                            Patient Facing View
+                          </span>
+                        </div>
                         <ReportMarkdownRenderer text={editedReportText} />
                       </div>
                     )}
@@ -819,6 +1269,99 @@ const PhysicianDashboard = () => {
           ) : null}
         </main>
       </div>
+
+      {/* Doctor Step Amendment Modal */}
+      {editingStep && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-black">
+                  {editingStep.step}
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    Amend Step {editingStep.step}: {editingStep.title}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">{editingStep.badge}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingStep(null)}
+                className="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 font-bold flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {editingStep.description}
+              </p>
+
+              {/* Quick Observation Chips */}
+              <div className="flex flex-wrap gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider self-center mr-1">Quick Add:</span>
+                {['Confirmed normal / asymptomatic', 'Mild presentation', 'Severe / Acute onset', 'Verified verbally with patient'].map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setStepAmendmentText(prev => prev ? `${prev}. ${chip}` : chip)}
+                    className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200 transition cursor-pointer"
+                  >
+                    + {chip}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Doctor Clinical Observation & Correction:
+                </label>
+                <textarea
+                  value={stepAmendmentText}
+                  onChange={e => setStepAmendmentText(e.target.value)}
+                  rows={4}
+                  className="w-full font-sans text-sm text-slate-800 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 leading-relaxed resize-none"
+                  placeholder={`Enter clinical notes, corrections, or doctor evaluation for ${editingStep.title}...`}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingStep(null);
+                    handleStartEditReport();
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Open Full Document Editor ↓
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingStep(null)}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveStepAmend}
+                    disabled={savingStepAmend}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition shadow-sm shadow-amber-200 disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingStepAmend ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Save Amendment
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ABHA Digital Health Card Modal */}
       {showAbhaModal && detail && (

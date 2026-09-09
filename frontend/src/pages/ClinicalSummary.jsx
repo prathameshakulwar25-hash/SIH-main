@@ -8,6 +8,7 @@ import {
   Clock, Calendar, Send, Phone, Mail
 } from 'lucide-react';
 import { useGlobalState } from '../context/GlobalStateContext';
+import { API_BASE } from '../config/api';
 
 // Complete Summary i18n Dictionary for clinical values, labels, and codes
 const SUMMARY_I18N = {
@@ -450,11 +451,15 @@ const ALL_SECTIONS = [
   'ayush_profile'
 ];
 
-// Reusable Section Header Review Status Component (Clean Patient-Facing Badges)
+// Reusable Section Header Review Status Component with Interactive Physician Controls
 const SectionReviewControls = ({
   sectionId,
   reviewState,
-  t
+  t,
+  onAccept,
+  onStartAmend,
+  onStartReject,
+  locked = false
 }) => {
   const current = reviewState?.[sectionId];
   const status = current?.status;
@@ -487,6 +492,45 @@ const SectionReviewControls = ({
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
           {t('AI-Extracted')}
         </span>
+      )}
+
+      {/* Interactive Physician Actions when Encounter is Not Locked */}
+      {!locked && onAccept && (
+        <div className="flex items-center gap-1">
+          {status !== 'accepted' && (
+            <button
+              type="button"
+              onClick={() => onAccept(sectionId)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-xs cursor-pointer active:scale-95"
+              title="Accept & Confirm this section"
+            >
+              <Check className="w-3 h-3" />
+              {t('Accept')}
+            </button>
+          )}
+          {onStartAmend && (
+            <button
+              type="button"
+              onClick={() => onStartAmend(sectionId)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition shadow-xs cursor-pointer active:scale-95"
+              title="Edit / Amend this section"
+            >
+              <Edit3 className="w-3 h-3" />
+              {t('Amend')}
+            </button>
+          )}
+          {status !== 'rejected' && onStartReject && (
+            <button
+              type="button"
+              onClick={() => onStartReject(sectionId)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition shadow-xs cursor-pointer active:scale-95"
+              title="Dispute this section"
+            >
+              <XCircle className="w-3 h-3" />
+              {t('Dispute')}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -720,7 +764,7 @@ const ClinicalSummary = () => {
   };
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/summary/${sessionId}`)
+    fetch(`${API_BASE}/api/summary/${sessionId}`)
       .then(res => res.json())
       .then(d => {
         // Merge DB data with Global State
@@ -832,13 +876,35 @@ const ClinicalSummary = () => {
   );
   const canLock = allReviewed && !data?.locked;
 
+  const handleApproveAllSections = () => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updated = { ...reviewState };
+    ALL_SECTIONS.forEach(sec => {
+      if (!updated[sec] || updated[sec].status !== 'amended') {
+        updated[sec] = {
+          ...(updated[sec] || {}),
+          status: 'accepted',
+          timestamp,
+          reason: ''
+        };
+      }
+    });
+    setReviewState(updated);
+    updateState({ physician_review: updated });
+    fetch(`${API_BASE}/api/physician/reports/${sessionId}/review-steps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ physician_id: 'physician-1', review_steps: updated })
+    }).catch(e => console.warn('Could not sync review steps to backend', e));
+  };
+
   const handleLock = () => {
     if (!allReviewed) {
       console.warn('[PhysicianReview] Lock prevented: not all sections reviewed.');
       return;
     }
     setLocking(true);
-    fetch(`http://localhost:8000/api/summary/${sessionId}/lock`, { method: 'POST' })
+    fetch(`${API_BASE}/api/summary/${sessionId}/lock`, { method: 'POST' })
       .then(res => res.json())
       .then(() => {
         if (sessionStorage.getItem('session_id') === sessionId) {
@@ -856,7 +922,7 @@ const ClinicalSummary = () => {
 
         if (targetEmail || targetPhone) {
           setDispatchStatus({ sending: true, message: 'Dispatching clinical report & SMS notification...', error: '' });
-          fetch(`http://localhost:8000/api/summary/${sessionId}/send-report`, {
+          fetch(`${API_BASE}/api/summary/${sessionId}/send-report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: targetEmail || null, phone: targetPhone || null })
@@ -888,7 +954,7 @@ const ClinicalSummary = () => {
 
   const handleExport = () => {
     setExporting(true);
-    fetch(`http://localhost:8000/api/summary/${sessionId}/export-fhir`, { method: 'POST' })
+    fetch(`${API_BASE}/api/summary/${sessionId}/export-fhir`, { method: 'POST' })
       .then(res => {
         if (!res.ok) throw new Error("FHIR export failed");
         return res.json();
@@ -1282,6 +1348,17 @@ const ClinicalSummary = () => {
                 <Printer className="w-4 h-4 mr-1.5" /> {lang === 'hi' ? 'प्रिंट' : 'Print'}
               </button>
 
+              {!locked && !canLock && (
+                <button 
+                  onClick={handleApproveAllSections}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-emerald-500 cursor-pointer"
+                  title="Approve all 9 clinical intake sections with one click"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                  {lang === 'hi' ? 'सभी 9 अनुभाग स्वीकृत करें' : 'Approve All 9 Sections'}
+                </button>
+              )}
+
               {!locked ? (
                 <div className="flex flex-col items-end">
                   <button 
@@ -1521,6 +1598,10 @@ const ClinicalSummary = () => {
                   sectionId="chief_complaint"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -1602,6 +1683,10 @@ const ClinicalSummary = () => {
                   sectionId="hpi"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -1835,6 +1920,10 @@ const ClinicalSummary = () => {
                   sectionId="past_medical_surgical"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -1924,6 +2013,10 @@ const ClinicalSummary = () => {
                   sectionId="drug_allergy"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -2041,6 +2134,10 @@ const ClinicalSummary = () => {
                   sectionId="family_history"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -2098,6 +2195,10 @@ const ClinicalSummary = () => {
                   sectionId="personal_history"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -2166,6 +2267,10 @@ const ClinicalSummary = () => {
                   sectionId="ros"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -2238,6 +2343,10 @@ const ClinicalSummary = () => {
                   sectionId="prior_investigations"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>
@@ -2496,6 +2605,10 @@ const ClinicalSummary = () => {
                   sectionId="ayush_profile"
                   reviewState={reviewState}
                   t={t}
+                  onAccept={handleAccept}
+                  onStartAmend={handleStartAmend}
+                  onStartReject={handleStartReject}
+                  locked={data?.locked}
                 />
               </div>
             </div>

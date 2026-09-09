@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useGlobalState } from '../context/GlobalStateContext';
 import {
   Mic, MicOff, Volume2, VolumeX, AlertTriangle, CheckCircle2,
-  ArrowRight, Globe, Loader2, Send, Shield, Paperclip, UploadCloud, X, FileText, Check, Plus
+  ArrowRight, Globe, Loader2, Send, Shield, Paperclip, UploadCloud, X, FileText, Check, Plus, Settings, Server, RefreshCw
 } from 'lucide-react';
 import { JeevanBrand, JeevanLogoIcon } from '../components/JeevanLogo';
 import { BodyMap } from '../components/BodyMap';
 import { TouchOptions } from '../components/TouchOptions';
+import { API_BASE, getApiBase } from '../config/api';
+import ServerConfigModal from '../components/ServerConfigModal';
 
-const API_BASE = 'http://localhost:8000';
 const LANG_CODE = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
 
 const LANG_OPTIONS = [
@@ -102,6 +103,8 @@ const VoiceIntake = () => {
   const [initialized, setInitialized] = useState(false);
   const [currentStepMeta, setCurrentStepMeta] = useState(null);
   const [touchKey, setTouchKey] = useState(0);
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
 
   // Document upload state
   const [showDocUploadModal, setShowDocUploadModal] = useState(false);
@@ -208,16 +211,31 @@ const VoiceIntake = () => {
     setIsThinking(true);
     setCurrentStepMeta(null);
 
+    const currentApi = getApiBase();
     try {
-      const res = await fetch(`${API_BASE}/api/llm/chat`, {
+      const res = await fetch(`${currentApi}/api/llm/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
+          'Bypass-Tunnel-Reminder': 'true'
+        },
         body: JSON.stringify({ history: newHistory, language: lang, session_id: activeSessionId })
       });
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        throw new Error(`Server returned HTTP ${res.status}`);
       }
-      const data = await res.json();
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        if (rawText.includes('localtunnel') || rawText.includes('Friendly Reminder')) {
+          throw new Error('Localtunnel requires 1-time browser unlock. Open the tunnel URL in a new tab.');
+        }
+        throw new Error('Server returned HTML instead of JSON');
+      }
+      setConnectionError(null);
       setIsThinking(false);
       if (data.red_flag_detected) setIsEmergency(true);
       if (data.step_meta && data.step_meta.options) {
@@ -250,11 +268,15 @@ const VoiceIntake = () => {
     } catch (err) {
       console.error('[sendAnswer error]', err);
       setIsThinking(false);
+      setConnectionError({
+        targetUrl: currentApi,
+        detail: err.message || 'Connection failed'
+      });
       const errMsg = lang === 'hi'
-        ? 'क्षमा करें, सर्वर से संपर्क नहीं हो पाया। कृपया पुनः प्रयास करें।'
+        ? `सर्वर से संपर्क नहीं हो पाया (${err.message})। कृपया सर्वर सेटिंग ठीक करें।`
         : lang === 'mr'
-        ? 'माफ करा, सर्व्हरशी संपर्क झाला नाही. कृपया पुन्हा प्रयत्न करा.'
-        : 'Sorry, connection issue with the assistant. Please try again.';
+        ? `सर्व्हरशी संपर्क झाला नाही (${err.message}). कृपया सर्व्हर सेटिंग तपासा.`
+        : `Connection issue: ${err.message}. Check Server Settings above.`;
       setCurrentQuestion(errMsg);
     }
   }, [history, isThinking, isGenerating, lang, activeSessionId, speak, ui]);
@@ -265,7 +287,10 @@ const VoiceIntake = () => {
     try {
       const res = await fetch(`${API_BASE}/api/llm/clinician-summary`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true'
+        },
         body: JSON.stringify({ history: finalHistory, language: 'en', session_id: sid })
       });
       const data = await res.json();
@@ -343,20 +368,41 @@ const VoiceIntake = () => {
     setInitialized(true);
     setIsThinking(true);
     const fetchFirst = async () => {
+      const currentApi = getApiBase();
       try {
-        const res = await fetch(`${API_BASE}/api/llm/chat`, {
+        const res = await fetch(`${currentApi}/api/llm/chat`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'bypass-tunnel-reminder': 'true',
+            'Bypass-Tunnel-Reminder': 'true'
+          },
           body: JSON.stringify({ history: [], language: lang, session_id: activeSessionId })
         });
-        const data = await res.json();
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rawText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          if (rawText.includes('localtunnel') || rawText.includes('Friendly Reminder')) {
+            throw new Error('Localtunnel requires 1-time browser unlock. Open tunnel URL in browser.');
+          }
+          throw new Error('Server returned HTML instead of JSON');
+        }
+        setConnectionError(null);
         const q = (data.reply || '').replace(/\[INTAKE_COMPLETE\]/g, '').trim();
         setCurrentQuestion(q);
         setHistory([{ role: 'assistant', content: q }]);
         if (data.step_meta) setCurrentStepMeta(data.step_meta);
         setTouchKey(k => k + 1);
         setTimeout(() => speak(q), 400);
-      } catch {
+      } catch (err) {
+        console.warn('[fetchFirst Notice]', err.message);
+        setConnectionError({
+          targetUrl: currentApi,
+          detail: err.message || 'Connection failed'
+        });
         const fallback = lang === 'hi'
           ? 'नमस्ते! मैं जीवन हूँ। आपके डॉक्टर के लिए आपकी स्वास्थ्य संबंधी जानकारी दर्ज करने में सहायता करूँगा। बताइए, आज आपको क्या परेशानी या लक्षण महसूस हो रहे हैं?'
           : lang === 'mr'
@@ -475,13 +521,16 @@ const VoiceIntake = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-teal-50/15 to-slate-100 flex flex-col justify-between font-sans text-slate-800 relative overflow-hidden select-none">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[380px] bg-teal-200/20 blur-3xl rounded-full pointer-events-none -z-0" />
-      <header className="relative z-20 max-w-4xl mx-auto w-full px-4 sm:px-6 pt-5 pb-2 flex items-center justify-between">
-        <JeevanBrand size="md" subtitleText={lang === 'hi' ? 'प्रत्येक जीवन की डिजिटल देखभाल' : lang === 'mr' ? 'प्रत्येक जीवनाची डिजिटल काळजी' : 'Digital Care of Every Life'} />
-        <div className="flex items-center gap-2">
+      <header className="relative z-20 max-w-4xl mx-auto w-full px-3 sm:px-6 pt-3.5 sm:pt-5 pb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <JeevanBrand size="sm" showSubtitle={false} className="sm:hidden" />
+          <JeevanBrand size="sm" showSubtitle={true} subtitleText={lang === 'hi' ? 'डिजिटल केयर' : lang === 'mr' ? 'डिजिटल काळजी' : 'Digital Care'} className="hidden sm:flex" />
+        </div>
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Upload past records button */}
           <button 
             onClick={() => setShowDocUploadModal(true)} 
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 backdrop-blur border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold transition shadow-xs cursor-pointer"
+            className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-xl bg-white/95 backdrop-blur border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold transition shadow-2xs cursor-pointer"
             title="Upload past prescription or lab report"
           >
             <Paperclip className="w-3.5 h-3.5 text-teal-600" />
@@ -489,22 +538,54 @@ const VoiceIntake = () => {
             <span className="sm:hidden">{uploadedDocs.length > 0 ? `${uploadedDocs.length}` : 'Rx'}</span>
           </button>
 
-          <button onClick={() => { setIsMuted(v => !v); synthRef.current?.cancel(); setIsSpeaking(false); }} className="p-2 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300 transition shadow-xs cursor-pointer">
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          <button onClick={() => { setIsMuted(v => !v); synthRef.current?.cancel(); setIsSpeaking(false); }} className="p-1.5 sm:p-2 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300 transition shadow-2xs cursor-pointer">
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
           </button>
-          <div className="flex items-center bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl shadow-xs border border-slate-200">
-            <Globe className="w-4 h-4 text-teal-600 mr-2 shrink-0" />
-            <select value={lang} onChange={e => handleLanguageChange(e.target.value)} className="bg-transparent font-bold text-slate-700 outline-none text-xs sm:text-sm cursor-pointer">
+          <button
+            type="button"
+            onClick={() => setShowServerModal(true)}
+            className={`p-1.5 sm:p-2 rounded-xl bg-white/95 backdrop-blur border transition shadow-2xs cursor-pointer ${
+              connectionError ? 'border-amber-400 text-amber-700 bg-amber-50' : 'border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300'
+            }`}
+            title="Backend Server Configuration"
+          >
+            <Server className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
+          <div className="flex items-center bg-white/95 backdrop-blur px-2 sm:px-3 py-1.5 rounded-xl shadow-2xs border border-slate-200">
+            <Globe className="w-3.5 h-3.5 text-teal-600 mr-1 shrink-0" />
+            <select value={lang} onChange={e => handleLanguageChange(e.target.value)} className="bg-transparent font-bold text-slate-700 outline-none text-xs sm:text-sm cursor-pointer pr-1">
               {LANG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <button onClick={() => navigate('/patient-home')} className="px-3.5 py-1.5 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-700 hover:text-slate-900 text-xs font-bold transition hover:border-slate-300 shadow-xs cursor-pointer">
+          <button onClick={() => navigate('/patient-home')} className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-700 hover:text-slate-900 text-xs font-bold transition hover:border-slate-300 shadow-2xs cursor-pointer">
             {ui.exitBtn}
           </button>
         </div>
       </header>
 
       <main className="relative z-10 max-w-2xl mx-auto w-full px-4 py-4 flex-1 flex flex-col items-center justify-start gap-4 overflow-y-auto">
+        {/* Backend Connection Diagnostic Alert */}
+        {connectionError && (
+          <div className="w-full bg-amber-50 border border-amber-300 text-amber-900 p-3 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs shadow-xs animate-in fade-in">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="min-w-0 text-left">
+                <span className="font-bold block">Backend Connection Issue</span>
+                <p className="text-[11px] text-amber-800 break-all">{connectionError.detail}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-mono truncate">Target: {connectionError.targetUrl}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowServerModal(true)}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shrink-0 cursor-pointer shadow-2xs flex items-center gap-1 self-stretch sm:self-auto justify-center"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Configure Server URL</span>
+            </button>
+          </div>
+        )}
+
         {isEmergency && (
           <div className="w-full bg-rose-50 border border-rose-300 text-rose-800 px-4 py-3 rounded-2xl flex items-center justify-center gap-2.5 font-bold text-sm shadow-sm animate-pulse">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -780,6 +861,16 @@ const VoiceIntake = () => {
           </div>
         </div>
       )}
+
+      {/* Server API Configuration Modal */}
+      <ServerConfigModal
+        isOpen={showServerModal}
+        onClose={() => setShowServerModal(false)}
+        onServerSaved={() => {
+          setConnectionError(null);
+          setInitialized(false);
+        }}
+      />
     </div>
   );
 };

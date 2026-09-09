@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UploadCloud, AlertTriangle, CheckCircle2, Save, ChevronRight, AlertCircle, RefreshCw, Volume2 } from 'lucide-react';
 
 import { useGlobalState } from '../context/GlobalStateContext';
+import { API_BASE } from '../config/api';
 
 const Documents = () => {
   const navigate = useNavigate();
@@ -54,7 +55,7 @@ const Documents = () => {
     formData.append('file', selectedFile);
     formData.append('session_id', sessionId);
     
-    fetch('http://localhost:8000/api/documents/upload', {
+    fetch(`${API_BASE}/api/documents/upload`, {
       method: 'POST',
       body: formData
     })

@@ -561,8 +561,10 @@ def get_summary(session_id: str, db: Session = Depends(get_db)):
             "type": intake.intake_type if intake else None,
             "complaint_title": normalize_clinical_complaint(intake.intake_type) if (intake and intake.intake_type) else None,
             "summary": intake.summary if intake else None,
-            "flags": intake.flags if intake else None
+            "flags": intake.flags if intake else None,
+            "review_steps": (intake.summary or {}).get("physician_review_steps", {}) if intake else {}
         } if intake else None,
+        "physician_review_steps": (intake.summary or {}).get("physician_review_steps", {}) if intake else {},
         "documents": {
             "labs": docs_labs,
             "medications": docs_meds,
@@ -1049,6 +1051,10 @@ class PhysicianSummaryUpdateRequest(BaseModel):
     physician_id: Optional[str] = "physician-1"
     clinician_summary: str
 
+class PhysicianReviewStepsRequest(BaseModel):
+    physician_id: Optional[str] = "physician-1"
+    review_steps: Dict[str, Any]
+
 @physician_router.get("/reports")
 def list_physician_reports(db: Session = Depends(get_db)):
     """List all intake reports sorted by criticality (emergency first, then urgent, then routine)."""
@@ -1139,6 +1145,34 @@ def get_physician_report(session_id: str, db: Session = Depends(get_db)):
             "prakriti": ayush.prakriti, "agni": ayush.agni, "koshtha": ayush.koshtha
         } if ayush else None,
         "documents": docs_items,
+        "review_steps": (intake.summary or {}).get("physician_review_steps", {}) if intake else {},
+    }
+
+@physician_router.post("/reports/{session_id}/review-steps")
+def save_physician_review_steps(session_id: str, req: PhysicianReviewStepsRequest, db: Session = Depends(get_db)):
+    """Persist doctor approval or edits for the 9 standard clinical review steps."""
+    intake = db.query(IntakeResult).filter(IntakeResult.session_id == session_id).first()
+    if not intake:
+        intake = IntakeResult(session_id=session_id, intake_type="voice-consultation", summary={})
+        db.add(intake)
+    
+    summary_data = dict(intake.summary or {})
+    existing = dict(summary_data.get("physician_review_steps", {}))
+    existing.update(req.review_steps)
+    summary_data["physician_review_steps"] = existing
+    summary_data["review_steps_updated_at"] = datetime.utcnow().isoformat()
+    intake.summary = summary_data
+
+    review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
+    if not review:
+        review = PhysicianReview(session_id=session_id, physician_id=req.physician_id or "physician-1")
+        db.add(review)
+    db.commit()
+
+    return {
+        "status": "review_steps_saved",
+        "session_id": session_id,
+        "review_steps": existing
     }
 
 @physician_router.post("/reports/{session_id}/verify")
