@@ -122,8 +122,13 @@ const VoiceIntake = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('session_id', activeSessionId);
-      const res = await fetch(`${API_BASE}/api/documents/upload`, {
+      const currentApi = getApiBase();
+      const res = await fetch(`${currentApi}/api/documents/upload`, {
         method: 'POST',
+        headers: {
+          'bypass-tunnel-reminder': 'true',
+          'Bypass-Tunnel-Reminder': 'true'
+        },
         body: formData,
       });
       if (!res.ok) throw new Error('Upload failed');
@@ -284,12 +289,14 @@ const VoiceIntake = () => {
   const finalizeReport = useCallback(async (finalHistory) => {
     setIsGenerating(true);
     const sid = activeSessionId || globalState?.session_id || sessionStorage.getItem('session_id') || `session-${Date.now()}`;
+    const currentApi = getApiBase();
     try {
-      const res = await fetch(`${API_BASE}/api/llm/clinician-summary`, {
+      const res = await fetch(`${currentApi}/api/llm/clinician-summary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'bypass-tunnel-reminder': 'true'
+          'bypass-tunnel-reminder': 'true',
+          'Bypass-Tunnel-Reminder': 'true'
         },
         body: JSON.stringify({ history: finalHistory, language: 'en', session_id: sid })
       });
@@ -299,9 +306,13 @@ const VoiceIntake = () => {
 
       // Persist to database so PhysicianDashboard & ClinicalSummary can read it
       try {
-        await fetch(`${API_BASE}/api/intake/ai-summary`, {
+        await fetch(`${currentApi}/api/intake/ai-summary`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'bypass-tunnel-reminder': 'true',
+            'Bypass-Tunnel-Reminder': 'true'
+          },
           body: JSON.stringify({
             session_id: sid,
             clinician_summary: reportContent,
@@ -344,9 +355,14 @@ const VoiceIntake = () => {
     // If intake just started and only greeting is shown, refresh greeting in new language
     if (history.filter(m => m.role === 'user').length === 0) {
       setIsThinking(true);
-      fetch(`${API_BASE}/api/llm/chat`, {
+      const currentApi = getApiBase();
+      fetch(`${currentApi}/api/llm/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
+          'Bypass-Tunnel-Reminder': 'true'
+        },
         body: JSON.stringify({ history: [], language: newLang, session_id: activeSessionId })
       })
         .then(r => r.json())

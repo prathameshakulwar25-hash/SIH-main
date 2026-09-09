@@ -4,10 +4,11 @@ import { useGlobalState } from '../context/GlobalStateContext';
 import {
   Globe, HeartPulse, Stethoscope, ArrowRight, Lock, ShieldCheck,
   Eye, EyeOff, Activity, Sparkles, Smartphone, Mail, CreditCard,
-  ArrowLeft, RotateCcw, CheckCircle2, Loader2, Shield, QrCode, User
+  ArrowLeft, RotateCcw, CheckCircle2, Loader2, Shield, QrCode, User, Server
 } from 'lucide-react';
 import { JeevanBrand } from '../components/JeevanLogo';
-import { API_BASE } from '../config/api';
+import { API_BASE, getApiBase } from '../config/api';
+import ServerConfigModal from '../components/ServerConfigModal';
 
 const PHYSICIAN_PIN = '1234';
 
@@ -193,6 +194,7 @@ const Landing = () => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showServerModal, setShowServerModal] = useState(false);
 
   // Timer countdowns
   useEffect(() => {
@@ -675,15 +677,25 @@ const Landing = () => {
       {/* Top Navbar */}
       <header className="relative z-10 max-w-5xl mx-auto w-full px-4 sm:px-6 pt-5 flex items-center justify-between">
         <JeevanBrand size="md" subtitleText={t.subBrand} />
-        <div className="flex items-center bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl shadow-xs border border-slate-200 hover:border-teal-300 transition">
-          <Globe className="w-4 h-4 text-teal-600 mr-2 shrink-0" />
-          <select
-            value={lang}
-            onChange={e => updateState({ language: e.target.value })}
-            className="bg-transparent font-bold text-slate-700 outline-none text-xs sm:text-sm cursor-pointer"
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl shadow-xs border border-slate-200 hover:border-teal-300 transition">
+            <Globe className="w-4 h-4 text-teal-600 mr-2 shrink-0" />
+            <select
+              value={lang}
+              onChange={e => updateState({ language: e.target.value })}
+              className="bg-transparent font-bold text-slate-700 outline-none text-xs sm:text-sm cursor-pointer"
+            >
+              {LANG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowServerModal(true)}
+            className="p-2 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-600 hover:text-teal-700 hover:border-teal-300 transition shadow-xs cursor-pointer"
+            title="Backend Server Configuration"
           >
-            {LANG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            <Server className="w-4 h-4 text-teal-600" />
+          </button>
         </div>
       </header>
 
@@ -1388,6 +1400,12 @@ const Landing = () => {
           <span>{t.footerNote}</span>
         </div>
       </footer>
+
+      {/* Backend API Configuration Modal */}
+      <ServerConfigModal
+        isOpen={showServerModal}
+        onClose={() => setShowServerModal(false)}
+      />
     </div>
   );
 };
