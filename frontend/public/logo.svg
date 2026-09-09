@@ -1,0 +1,116 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Heart Gradient (Vibrant Teal to Cyan) -->
+    <linearGradient id="pub-heart-grad" x1="43" y1="8" x2="77" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="50%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+
+    <!-- Upper-Left Herbal Leaf (Sprout Lime to Vivid Emerald) -->
+    <linearGradient id="pub-leaf-tl" x1="14" y1="18" x2="57" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#86efac" />
+      <stop offset="35%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#15803d" />
+    </linearGradient>
+
+    <!-- Lower-Left Herbal Leaf (Rich Forest Green) -->
+    <linearGradient id="pub-leaf-bl" x1="7" y1="60" x2="58" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+
+    <!-- Upper-Right Clinical Leaf (Sky Cyan to Deep Clinical Blue) -->
+    <linearGradient id="pub-leaf-tr" x1="106" y1="18" x2="63" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="40%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#1e40af" />
+    </linearGradient>
+
+    <!-- Lower-Right Clinical Leaf (Deep Ocean to Royal Navy) -->
+    <linearGradient id="pub-leaf-br" x1="113" y1="60" x2="62" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="45%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Subtle Shimmer Overlay for Leaves -->
+    <linearGradient id="pub-shimmer" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Top Heart with Medical Cross -->
+  <g>
+    <path
+      d="M 60 36.5 C 58 34.5 43 23.5 43 14 C 43 7.5 48 3.5 54.5 3.5 C 57.5 3.5 59.2 5.2 60 7 C 60.8 5.2 62.5 3.5 65.5 3.5 C 72 3.5 77 7.5 77 14 C 77 23.5 62 34.5 60 36.5 Z"
+      fill="url(#pub-heart-grad)"
+    />
+    <path
+      d="M 46 11.5 C 47.5 8 50.5 5.5 54 5.2"
+      stroke="rgba(255,255,255,0.45)"
+      stroke-width="1.2"
+      stroke-linecap="round"
+      fill="none"
+    />
+    <!-- Medical Cross -->
+    <rect x="58" y="11" width="4" height="12" rx="1.2" fill="#FFFFFF" />
+    <rect x="54" y="15" width="12" height="4" rx="1.2" fill="#FFFFFF" />
+  </g>
+
+  <!-- Left Herbal AYUSH Leaves -->
+  <g>
+    <path
+      d="M 56.5 98 C 54 74 36 46 14 18 C 9 36 9 62 25 79 C 34 88.5 46 95.5 56.5 98 Z"
+      fill="url(#pub-leaf-tl)"
+    />
+    <path
+      d="M 54.5 95 C 44 76 30 52 17 23"
+      stroke="url(#pub-shimmer)"
+      stroke-width="1.2"
+      stroke-linecap="round"
+      fill="none"
+    />
+
+    <path
+      d="M 58 107 C 52 98 34 86 7 60 C 8 80 20 98 48 106.5 C 52.5 107.8 55.8 107.4 58 107 Z"
+      fill="url(#pub-leaf-bl)"
+    />
+    <path
+      d="M 55 104 C 42 94 26 82 12 66"
+      stroke="url(#pub-shimmer)"
+      stroke-width="1"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+
+  <!-- Right Clinical Allopathic Leaves -->
+  <g>
+    <path
+      d="M 63.5 98 C 66 74 84 46 106 18 C 111 36 111 62 95 79 C 86 88.5 74 95.5 63.5 98 Z"
+      fill="url(#pub-leaf-tr)"
+    />
+    <path
+      d="M 65.5 95 C 76 76 90 52 103 23"
+      stroke="url(#pub-shimmer)"
+      stroke-width="1.2"
+      stroke-linecap="round"
+      fill="none"
+    />
+
+    <path
+      d="M 62 107 C 68 98 86 86 113 60 C 112 80 100 98 72 106.5 C 67.5 107.8 64.2 107.4 62 107 Z"
+      fill="url(#pub-leaf-br)"
+    />
+    <path
+      d="M 65 104 C 78 94 94 82 108 66"
+      stroke="url(#pub-shimmer)"
+      stroke-width="1"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+</svg>

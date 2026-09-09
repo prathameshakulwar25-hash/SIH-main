@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <!-- Soft mint background gradient matching user design -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#edfbf2" />
+      <stop offset="40%" stop-color="#dcf8e5" />
+      <stop offset="100%" stop-color="#c9f2d8" />
+    </linearGradient>
+
+    <!-- Ayurvedic Green Leaves Gradients -->
+    <linearGradient id="leftUpperLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="60%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#15803d" />
+    </linearGradient>
+    <linearGradient id="leftLowerLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+
+    <!-- Clinical Teal/Blue Leaves Gradients -->
+    <linearGradient id="rightUpperLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="60%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="rightLowerLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="60%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Center Cyan/Blue Heart Gradient -->
+    <linearGradient id="heartGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Drop Shadow for Depth -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#0f766e" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="256" height="256" rx="48" fill="url(#bgGrad)" />
+
+  <!-- Main Emblem Group -->
+  <g filter="url(#shadow)">
+    
+    <!-- LEFT LOWER LEAF -->
+    <path d="M 124 205 C 70 190 42 145 46 112 C 66 110 102 135 124 185 Z" 
+          fill="url(#leftLowerLeaf)" />
+
+    <!-- LEFT UPPER LEAF (Vibrant Ayurvedic Green) -->
+    <path d="M 124 205 C 68 185 36 130 40 68 C 68 62 112 80 126 132 C 128 160 126 188 124 205 Z" 
+          fill="url(#leftUpperLeaf)" />
+    <!-- Leaf Spine Highlight -->
+    <path d="M 58 88 C 78 120 108 160 123 198" 
+          stroke="#dcfce7" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.8" />
+
+    <!-- RIGHT LOWER LEAF -->
+    <path d="M 132 205 C 186 190 214 145 210 112 C 190 110 154 135 132 185 Z" 
+          fill="url(#rightLowerLeaf)" />
+
+    <!-- RIGHT UPPER LEAF (Clinical Teal / Blue) -->
+    <path d="M 132 205 C 188 185 220 130 216 68 C 188 62 144 80 130 132 C 128 160 130 188 132 205 Z" 
+          fill="url(#rightUpperLeaf)" />
+    <!-- Leaf Spine Highlight -->
+    <path d="M 198 88 C 178 120 148 160 133 198" 
+          stroke="#e0f2fe" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.8" />
+
+    <!-- CENTER HEART WITH MEDICAL CROSS -->
+    <g transform="translate(128, 44)">
+      <!-- Heart Geometry -->
+      <path d="M 0,26 C -3,-5 -34,-5 -34,15 C -34,31 0,55 0,55 C 0,55 34,31 34,15 C 34,-5 3,-5 0,26 Z" 
+            fill="url(#heartGrad)" />
+      
+      <!-- White Medical Cross (+) -->
+      <rect x="-3" y="14" width="6" height="20" rx="2" fill="#ffffff" />
+      <rect x="-10" y="21" width="20" height="6" rx="2" fill="#ffffff" />
+    </g>
+
+  </g>
+</svg>

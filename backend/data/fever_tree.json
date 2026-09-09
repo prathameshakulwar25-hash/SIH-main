@@ -1,0 +1,77 @@
+{
+  "nodes": [
+    {
+      "id": "onset",
+      "socrates_category": "O",
+      "question_text": "How did the fever start?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Suddenly", "value": "sudden", "next": "pattern" },
+        { "text": "Gradually over a few days", "value": "gradual", "next": "pattern" }
+      ]
+    },
+    {
+      "id": "pattern",
+      "socrates_category": "T",
+      "question_text": "What is the pattern of the fever?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Continuous (high all the time)", "value": "continuous", "next": "associated_sx" },
+        { "text": "Intermittent or Spiking (comes and goes)", "value": "spiking", "next": "associated_sx" }
+      ]
+    },
+    {
+      "id": "associated_sx",
+      "socrates_category": "A",
+      "question_text": "Are you experiencing any other symptoms?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Severe chills or rigors (shaking)", "value": "rigors", "next": "duration" },
+        { "text": "Headache, muscle/joint aches, rash", "value": "aches_rash", "next": "travel_history" },
+        { "text": "Severe neck stiffness or confusion", "value": "cns", "next": "duration" },
+        { "text": "Cough, sore throat, or runny nose", "value": "respiratory", "next": "duration" },
+        { "text": "None of the above", "value": "none", "next": "duration" }
+      ]
+    },
+    {
+      "id": "travel_history",
+      "socrates_category": "A",
+      "question_text": "Have you traveled to tropical/forested areas recently or had tick/mosquito bites?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Yes", "value": "yes", "next": "duration" },
+        { "text": "No", "value": "no", "next": "duration" }
+      ]
+    },
+    {
+      "id": "duration",
+      "socrates_category": "T",
+      "question_text": "How long have you had the fever?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Less than 3 days", "value": "lt_3", "next": "severity" },
+        { "text": "3 to 5 days", "value": "3_to_5", "next": "severity" },
+        { "text": "More than 5 days", "value": "gt_5", "next": "severity" }
+      ]
+    },
+    {
+      "id": "severity",
+      "socrates_category": "S",
+      "question_text": "On a scale of 1 to 10, how severe are your symptoms overall?",
+      "input_type": "slider",
+      "options": [
+        { "text": "1", "value": "1", "next": null },
+        { "text": "2", "value": "2", "next": null },
+        { "text": "3", "value": "3", "next": null },
+        { "text": "4", "value": "4", "next": null },
+        { "text": "5", "value": "5", "next": null },
+        { "text": "6", "value": "6", "next": null },
+        { "text": "7", "value": "7", "next": null },
+        { "text": "8", "value": "8", "next": null },
+        { "text": "9", "value": "9", "next": null },
+        { "text": "10", "value": "10", "next": null }
+      ]
+    }
+  ],
+  "start_node": "onset"
+}

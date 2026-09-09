@@ -1,0 +1,872 @@
+{
+  "flow_name": "universal_clinical_intake",
+  "version": "2.0",
+  "red_flags": [
+    "chest pain",
+    "difficulty breathing",
+    "stroke symptoms",
+    "fainting",
+    "severe bleeding",
+    "seizure",
+    "suicidal thoughts",
+    "confusion",
+    "severe allergic reaction",
+    "uncontrolled vomiting",
+    "cannot pass urine",
+    "pregnancy with bleeding",
+    "severe pain",
+    "unconscious",
+    "paralysis",
+    "sudden vision loss",
+    "blood in vomit",
+    "coughing blood",
+    "सीने में दर्द",
+    "सांस लेने में दिक्कत",
+    "बेहोशी",
+    "दौरा",
+    "खून बहना",
+    "आत्मघाती",
+    "गंभीर एलर्जी",
+    "पेशाब बंद",
+    "छाती दुखणे",
+    "श्वास घेणे कठीण",
+    "बेशुद्धी",
+    "रक्तस्राव"
+  ],
+  "steps": [
+    {
+      "id": "greeting",
+      "field": "greeting",
+      "ui_type": "chips",
+      "text_en": "Hello! What brings you in today? Please tell me what is bothering you.",
+      "text_hi": "नमस्ते! आज आप यहाँ क्यों आए हैं? कृपया बताएं आपको क्या तकलीफ है।",
+      "text_mr": "नमस्कार! आज तुम्ही येथे का आलात? कृपया तुम्हाला काय त्रास होतोय ते सांगा.",
+      "options": [
+        {
+          "id": "pain",
+          "icon": "🤕",
+          "label_en": "Pain / Ache",
+          "label_hi": "दर्द / तकलीफ",
+          "label_mr": "वेदना / दुखणे"
+        },
+        {
+          "id": "fever",
+          "icon": "🌡️",
+          "label_en": "Fever",
+          "label_hi": "बुखार",
+          "label_mr": "ताप"
+        },
+        {
+          "id": "cough",
+          "icon": "😮",
+          "label_en": "Cough / Breathless",
+          "label_hi": "खाँसी / साँस फूलना",
+          "label_mr": "खोकला / श्वास"
+        },
+        {
+          "id": "vomit",
+          "icon": "🤢",
+          "label_en": "Vomiting / Nausea",
+          "label_hi": "उल्टी / जी मिचलाना",
+          "label_mr": "उलटी / मळमळ"
+        },
+        {
+          "id": "weakness",
+          "icon": "😴",
+          "label_en": "Weakness / Fatigue",
+          "label_hi": "कमज़ोरी / थकान",
+          "label_mr": "अशक्तपणा / थकवा"
+        },
+        {
+          "id": "injury",
+          "icon": "🩹",
+          "label_en": "Injury / Wound",
+          "label_hi": "चोट / घाव",
+          "label_mr": "दुखापत / जखम"
+        }
+      ]
+    },
+    {
+      "id": "onset",
+      "field": "onset",
+      "ui_type": "chips",
+      "text_en": "When did this problem start?",
+      "text_hi": "यह समस्या कब से शुरू हुई?",
+      "text_mr": "हा त्रास कधापासून सुरू झाला?",
+      "options": [
+        {
+          "id": "today",
+          "icon": "⚡",
+          "label_en": "Just today",
+          "label_hi": "आज से",
+          "label_mr": "आजपासून"
+        },
+        {
+          "id": "2to3days",
+          "icon": "📅",
+          "label_en": "2-3 Days ago",
+          "label_hi": "2-3 दिन से",
+          "label_mr": "2-3 दिवसांपासून"
+        },
+        {
+          "id": "week",
+          "icon": "🗓️",
+          "label_en": "About a week",
+          "label_hi": "लगभग एक हफ्ते से",
+          "label_mr": "सुमारे एक आठवडा"
+        },
+        {
+          "id": "month",
+          "icon": "📆",
+          "label_en": "1 month or more",
+          "label_hi": "1 महीना या ज़्यादा",
+          "label_mr": "1 महिना किंवा जास्त"
+        }
+      ]
+    },
+    {
+      "id": "duration",
+      "field": "duration",
+      "ui_type": "chips",
+      "text_en": "How long have you had this?",
+      "text_hi": "यह कितने समय से है?",
+      "text_mr": "हे किती दिवसांपासून आहे?",
+      "options": [
+        {
+          "id": "days",
+          "icon": "🌅",
+          "label_en": "A few days",
+          "label_hi": "कुछ दिन",
+          "label_mr": "काही दिवस"
+        },
+        {
+          "id": "weeks",
+          "icon": "📅",
+          "label_en": "A few weeks",
+          "label_hi": "कुछ हफ्ते",
+          "label_mr": "काही आठवडे"
+        },
+        {
+          "id": "months",
+          "icon": "🗓️",
+          "label_en": "Months",
+          "label_hi": "कई महीने",
+          "label_mr": "अनेक महिने"
+        },
+        {
+          "id": "years",
+          "icon": "📆",
+          "label_en": "More than a year",
+          "label_hi": "एक साल से ज़्यादा",
+          "label_mr": "एक वर्षापेक्षा जास्त"
+        }
+      ]
+    },
+    {
+      "id": "course",
+      "field": "course",
+      "ui_type": "chips",
+      "text_en": "Since it started, is it getting better, worse, or staying the same?",
+      "text_hi": "जब से शुरू हुई है, क्या यह तकलीफ बढ़ रही है, कम हो रही है, या वैसी ही है?",
+      "text_mr": "सुरू झाल्यापासून, हे दुखणे वाढत आहे का, कमी होत आहे, की तसेच आहे?",
+      "options": [
+        {
+          "id": "worse",
+          "icon": "📈",
+          "label_en": "Getting Worse",
+          "label_hi": "बढ़ रहा है",
+          "label_mr": "वाढत आहे"
+        },
+        {
+          "id": "same",
+          "icon": "➡️",
+          "label_en": "Same as before",
+          "label_hi": "वैसा ही है",
+          "label_mr": "तसेच आहे"
+        },
+        {
+          "id": "better",
+          "icon": "📉",
+          "label_en": "Getting Better",
+          "label_hi": "कम हो रहा है",
+          "label_mr": "कमी होत आहे"
+        }
+      ]
+    },
+    {
+      "id": "severity",
+      "field": "severity",
+      "ui_type": "face_scale",
+      "text_en": "On a scale of 0 to 10, how would you rate the pain?",
+      "text_hi": "0 से 10 के पैमाने पर, आप दर्द को कितना देंगे?",
+      "text_mr": "0 ते 10 च्या प्रमाणावर, वेदना किती आहे?",
+      "options": [
+        {
+          "id": "0",
+          "icon": "😊",
+          "label_en": "0 – No Pain",
+          "label_hi": "0 – कोई दर्द नहीं",
+          "label_mr": "0 – वेदना नाही"
+        },
+        {
+          "id": "2",
+          "icon": "🙂",
+          "label_en": "2 – Very Mild",
+          "label_hi": "2 – बहुत हल्का",
+          "label_mr": "2 – अत्यंत सौम्य"
+        },
+        {
+          "id": "4",
+          "icon": "😐",
+          "label_en": "4 – Moderate",
+          "label_hi": "4 – मध्यम दर्द",
+          "label_mr": "4 – मध्यम"
+        },
+        {
+          "id": "6",
+          "icon": "😟",
+          "label_en": "6 – Quite Bad",
+          "label_hi": "6 – काफी तकलीफ",
+          "label_mr": "6 – बऱ्यापैकी वाईट"
+        },
+        {
+          "id": "8",
+          "icon": "😣",
+          "label_en": "8 – Very Severe",
+          "label_hi": "8 – बहुत तेज़ दर्द",
+          "label_mr": "8 – अत्यंत तीव्र"
+        },
+        {
+          "id": "10",
+          "icon": "😭",
+          "label_en": "10 – Worst Pain",
+          "label_hi": "10 – असहनीय दर्द",
+          "label_mr": "10 – सहन न होणारी वेदना"
+        }
+      ]
+    },
+    {
+      "id": "location",
+      "field": "location",
+      "ui_type": "body_map",
+      "text_en": "Where exactly is the problem? Tap the area on the body.",
+      "text_hi": "यह तकलीफ ठीक कहाँ है? शरीर पर उस जगह को टैप करें।",
+      "text_mr": "हा त्रास नक्की कुठे आहे? शरीरावर त्या जागी टॅप करा."
+    },
+    {
+      "id": "character",
+      "field": "character",
+      "ui_type": "chips",
+      "text_en": "How would you describe the pain or sensation?",
+      "text_hi": "आपको किस प्रकार का दर्द या एहसास हो रहा है?",
+      "text_mr": "हे दुखणे किंवा जाणीव कशा प्रकारची आहे?",
+      "options": [
+        {
+          "id": "sharp",
+          "icon": "⚡",
+          "label_en": "Sharp / Stabbing",
+          "label_hi": "तेज़ / चुभने वाला",
+          "label_mr": "तीक्ष्ण / टोचणारे"
+        },
+        {
+          "id": "burning",
+          "icon": "🔥",
+          "label_en": "Burning",
+          "label_hi": "जलन जैसा",
+          "label_mr": "जळजळ"
+        },
+        {
+          "id": "throbbing",
+          "icon": "🔨",
+          "label_en": "Throbbing",
+          "label_hi": "धड़कता दर्द",
+          "label_mr": "ठणका"
+        },
+        {
+          "id": "pressure",
+          "icon": "🪨",
+          "label_en": "Heavy / Pressure",
+          "label_hi": "भारीपन / दबाव",
+          "label_mr": "जडपणा / दाब"
+        },
+        {
+          "id": "cramp",
+          "icon": "🌀",
+          "label_en": "Cramping",
+          "label_hi": "ऐंठन / मरोड़",
+          "label_mr": "उबळ"
+        },
+        {
+          "id": "dull",
+          "icon": "😑",
+          "label_en": "Dull Ache",
+          "label_hi": "हल्का दर्द",
+          "label_mr": "मंद वेदना"
+        }
+      ]
+    },
+    {
+      "id": "radiation",
+      "field": "radiation",
+      "ui_type": "yesno",
+      "text_en": "Does the pain spread to any other part of your body?",
+      "text_hi": "क्या यह दर्द शरीर के किसी और हिस्से में फैलता है?",
+      "text_mr": "हा दुखणे शरीराच्या इतर भागात पसरतो का?",
+      "options": [
+        {
+          "id": "yes_radiation",
+          "icon": "✅",
+          "label_en": "Yes, it spreads",
+          "label_hi": "हाँ, फैलता है",
+          "label_mr": "हो, पसरतो"
+        },
+        {
+          "id": "no_radiation",
+          "icon": "❌",
+          "label_en": "No, stays in one place",
+          "label_hi": "नहीं, एक जगह",
+          "label_mr": "नाही, एकाच जागी"
+        }
+      ]
+    },
+    {
+      "id": "timing",
+      "field": "timing",
+      "ui_type": "chips",
+      "text_en": "Is it there all the time, or does it come and go?",
+      "text_hi": "क्या यह हमेशा रहती है, या कभी-कभी आती-जाती है?",
+      "text_mr": "हे नेहमी असते, की येते-जाते?",
+      "options": [
+        {
+          "id": "constant",
+          "icon": "🔄",
+          "label_en": "Constant / Always",
+          "label_hi": "हमेशा रहता है",
+          "label_mr": "सतत / नेहमी"
+        },
+        {
+          "id": "intermit",
+          "icon": "〰️",
+          "label_en": "Comes and Goes",
+          "label_hi": "आता-जाता है",
+          "label_mr": "येते आणि जाते"
+        },
+        {
+          "id": "morning",
+          "icon": "☀️",
+          "label_en": "Worse in Morning",
+          "label_hi": "सुबह ज़्यादा",
+          "label_mr": "सकाळी जास्त"
+        },
+        {
+          "id": "night",
+          "icon": "🌙",
+          "label_en": "Worse at Night",
+          "label_hi": "रात को ज़्यादा",
+          "label_mr": "रात्री जास्त"
+        }
+      ]
+    },
+    {
+      "id": "triggers",
+      "field": "triggers",
+      "ui_type": "chips",
+      "text_en": "What makes it worse?",
+      "text_hi": "क्या कोई चीज़ इसे बढ़ाती है?",
+      "text_mr": "कशामुळे ते वाढते?",
+      "options": [
+        {
+          "id": "eating",
+          "icon": "🍽️",
+          "label_en": "Eating food",
+          "label_hi": "खाना खाने से",
+          "label_mr": "जेवल्यावर"
+        },
+        {
+          "id": "activity",
+          "icon": "🏃",
+          "label_en": "Physical activity",
+          "label_hi": "काम करने से",
+          "label_mr": "शारीरिक क्रियेने"
+        },
+        {
+          "id": "stress",
+          "icon": "😰",
+          "label_en": "Stress / Tension",
+          "label_hi": "तनाव से",
+          "label_mr": "ताणाने"
+        },
+        {
+          "id": "posture",
+          "icon": "🧍",
+          "label_en": "Certain position",
+          "label_hi": "किसी पोज़िशन से",
+          "label_mr": "एखाद्या स्थितीत"
+        },
+        {
+          "id": "nothing",
+          "icon": "🚫",
+          "label_en": "Nothing specific",
+          "label_hi": "कोई खास बात नहीं",
+          "label_mr": "काही विशेष नाही"
+        }
+      ]
+    },
+    {
+      "id": "relief",
+      "field": "relieving_factors",
+      "ui_type": "chips",
+      "text_en": "What gives you relief?",
+      "text_hi": "क्या कोई चीज़ आराम देती है?",
+      "text_mr": "कशामुळे आराम मिळतो?",
+      "options": [
+        {
+          "id": "rest",
+          "icon": "🛏️",
+          "label_en": "Rest / Lying down",
+          "label_hi": "आराम करने से",
+          "label_mr": "विश्रांतीने"
+        },
+        {
+          "id": "medicine",
+          "icon": "💊",
+          "label_en": "Medicine / Tablets",
+          "label_hi": "दवाई लेने से",
+          "label_mr": "औषधाने"
+        },
+        {
+          "id": "eating2",
+          "icon": "🍽️",
+          "label_en": "After eating",
+          "label_hi": "खाना खाने से",
+          "label_mr": "जेवल्यावर"
+        },
+        {
+          "id": "nothing2",
+          "icon": "🚫",
+          "label_en": "Nothing helps",
+          "label_hi": "कुछ भी आराम नहीं",
+          "label_mr": "काहीच उपयोग नाही"
+        }
+      ]
+    },
+    {
+      "id": "associated_symptoms",
+      "field": "associated_symptoms",
+      "ui_type": "chips_multi",
+      "text_en": "Along with this, do you have any other symptoms? (Pick all that apply)",
+      "text_hi": "इसके साथ कोई और लक्षण भी हैं? (एक से ज़्यादा चुन सकते हैं)",
+      "text_mr": "यासोबत इतर काही लक्षणे आहेत का? (एकापेक्षा जास्त निवडू शकता)",
+      "options": [
+        {
+          "id": "fever",
+          "icon": "🌡️",
+          "label_en": "Fever",
+          "label_hi": "बुखार",
+          "label_mr": "ताप"
+        },
+        {
+          "id": "nausea",
+          "icon": "🤢",
+          "label_en": "Nausea / Vomiting",
+          "label_hi": "जी मिचलाना",
+          "label_mr": "मळमळ / उलटी"
+        },
+        {
+          "id": "dizzy",
+          "icon": "💫",
+          "label_en": "Dizziness",
+          "label_hi": "चक्कर आना",
+          "label_mr": "चक्कर येणे"
+        },
+        {
+          "id": "tired",
+          "icon": "🥱",
+          "label_en": "Weakness / Fatigue",
+          "label_hi": "थकान / कमज़ोरी",
+          "label_mr": "थकवा / अशक्तता"
+        },
+        {
+          "id": "sweat",
+          "icon": "💧",
+          "label_en": "Sweating",
+          "label_hi": "पसीना",
+          "label_mr": "घाम येणे"
+        },
+        {
+          "id": "appetite",
+          "icon": "🍽️",
+          "label_en": "No appetite",
+          "label_hi": "भूख नहीं",
+          "label_mr": "भूक नाही"
+        },
+        {
+          "id": "none",
+          "icon": "✅",
+          "label_en": "None",
+          "label_hi": "कुछ नहीं",
+          "label_mr": "काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "past_history",
+      "field": "past_medical_history",
+      "ui_type": "chips_multi",
+      "text_en": "Do you have any long-term medical conditions?",
+      "text_hi": "क्या आपको कोई पुरानी बीमारी है?",
+      "text_mr": "तुम्हाला कोणताही जुना आजार आहे का?",
+      "options": [
+        {
+          "id": "diabetes",
+          "icon": "🩸",
+          "label_en": "Diabetes / Sugar",
+          "label_hi": "शुगर / डायबिटीज़",
+          "label_mr": "मधुमेह"
+        },
+        {
+          "id": "bp",
+          "icon": "❤️",
+          "label_en": "High Blood Pressure",
+          "label_hi": "हाई BP",
+          "label_mr": "उच्च रक्तदाब"
+        },
+        {
+          "id": "asthma",
+          "icon": "🌬️",
+          "label_en": "Asthma / Lung disease",
+          "label_hi": "दमा",
+          "label_mr": "दमा"
+        },
+        {
+          "id": "heart",
+          "icon": "💓",
+          "label_en": "Heart Disease",
+          "label_hi": "दिल की बीमारी",
+          "label_mr": "हृदयरोग"
+        },
+        {
+          "id": "thyroid",
+          "icon": "🦋",
+          "label_en": "Thyroid problems",
+          "label_hi": "थायरॉइड",
+          "label_mr": "थायरॉईड"
+        },
+        {
+          "id": "none_hist",
+          "icon": "✅",
+          "label_en": "None",
+          "label_hi": "कुछ नहीं",
+          "label_mr": "काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "surgical_history",
+      "field": "surgical_history",
+      "ui_type": "yesno",
+      "text_en": "Have you ever had any surgeries or hospital admissions?",
+      "text_hi": "क्या आपका पहले कभी कोई ऑपरेशन हुआ है?",
+      "text_mr": "तुमचे आधी कधी ऑपरेशन झाले आहे का?",
+      "options": [
+        {
+          "id": "yes_surg",
+          "icon": "✅",
+          "label_en": "Yes",
+          "label_hi": "हाँ",
+          "label_mr": "होय"
+        },
+        {
+          "id": "no_surg",
+          "icon": "❌",
+          "label_en": "No",
+          "label_hi": "नहीं",
+          "label_mr": "नाही"
+        }
+      ]
+    },
+    {
+      "id": "medicines",
+      "field": "medications",
+      "ui_type": "yesno",
+      "text_en": "Are you currently taking any medicines regularly?",
+      "text_hi": "क्या आप इस समय कोई दवाइयाँ नियमित रूप से ले रहे हैं?",
+      "text_mr": "तुम्ही सध्या कोणती औषधे नियमित घेत आहात का?",
+      "options": [
+        {
+          "id": "yes_med",
+          "icon": "✅",
+          "label_en": "Yes, I take medicines",
+          "label_hi": "हाँ, दवाई लेता/लेती हूँ",
+          "label_mr": "होय, औषधे घेतो"
+        },
+        {
+          "id": "no_med",
+          "icon": "❌",
+          "label_en": "No medicines",
+          "label_hi": "नहीं",
+          "label_mr": "नाही"
+        }
+      ]
+    },
+    {
+      "id": "allergies",
+      "field": "allergies",
+      "ui_type": "yesno",
+      "text_en": "Do you have any known allergies to medicines or foods?",
+      "text_hi": "क्या आपको किसी दवाई या खाने से एलर्जी है?",
+      "text_mr": "तुम्हाला कोणत्याही औषधांना किंवा अन्नाला एलर्जी आहे का?",
+      "options": [
+        {
+          "id": "yes_allergy",
+          "icon": "✅",
+          "label_en": "Yes, I have allergies",
+          "label_hi": "हाँ, एलर्जी है",
+          "label_mr": "होय, एलर्जी आहे"
+        },
+        {
+          "id": "no_allergy",
+          "icon": "❌",
+          "label_en": "No known allergies",
+          "label_hi": "नहीं",
+          "label_mr": "नाही"
+        }
+      ]
+    },
+    {
+      "id": "family_history",
+      "field": "family_history",
+      "ui_type": "chips_multi",
+      "text_en": "Does anyone in your family have major illnesses?",
+      "text_hi": "क्या आपके परिवार में किसी को कोई बड़ी बीमारी है?",
+      "text_mr": "तुमच्या कुटुंबात कोणाला मोठा आजार आहे का?",
+      "options": [
+        {
+          "id": "fam_diabetes",
+          "icon": "🩸",
+          "label_en": "Diabetes",
+          "label_hi": "शुगर",
+          "label_mr": "मधुमेह"
+        },
+        {
+          "id": "fam_bp",
+          "icon": "❤️",
+          "label_en": "Blood Pressure",
+          "label_hi": "BP",
+          "label_mr": "रक्तदाब"
+        },
+        {
+          "id": "fam_heart",
+          "icon": "💓",
+          "label_en": "Heart disease",
+          "label_hi": "दिल की बीमारी",
+          "label_mr": "हृदयरोग"
+        },
+        {
+          "id": "fam_cancer",
+          "icon": "🎗️",
+          "label_en": "Cancer",
+          "label_hi": "कैंसर",
+          "label_mr": "कर्करोग"
+        },
+        {
+          "id": "fam_none",
+          "icon": "✅",
+          "label_en": "None / Do not know",
+          "label_hi": "कुछ नहीं / पता नहीं",
+          "label_mr": "काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "social_history",
+      "field": "social_history",
+      "ui_type": "chips_multi",
+      "text_en": "Do you use any of the following?",
+      "text_hi": "क्या आप इनमें से कोई चीज़ लेते/लेती हैं?",
+      "text_mr": "तुम्ही यापैकी काही वापरता का?",
+      "options": [
+        {
+          "id": "tobacco",
+          "icon": "🌿",
+          "label_en": "Tobacco / Gutka",
+          "label_hi": "तंबाकू / गुटखा",
+          "label_mr": "तंबाखू / गुटखा"
+        },
+        {
+          "id": "smoking",
+          "icon": "🚬",
+          "label_en": "Smoking",
+          "label_hi": "सिगरेट / बीड़ी",
+          "label_mr": "सिगारेट"
+        },
+        {
+          "id": "alcohol",
+          "icon": "🍺",
+          "label_en": "Alcohol",
+          "label_hi": "शराब",
+          "label_mr": "दारू"
+        },
+        {
+          "id": "none_soc",
+          "icon": "✅",
+          "label_en": "None of the above",
+          "label_hi": "कोई नहीं",
+          "label_mr": "यापैकी काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "lifestyle",
+      "field": "lifestyle",
+      "ui_type": "chips_multi",
+      "text_en": "How are you doing with the following?",
+      "text_hi": "इनके बारे में आप कैसा महसूस करते हैं?",
+      "text_mr": "खालीलबाबत तुम्हाला कसे वाटते?",
+      "options": [
+        {
+          "id": "sleep_bad",
+          "icon": "😴",
+          "label_en": "Poor sleep",
+          "label_hi": "नींद कम है",
+          "label_mr": "झोप कमी"
+        },
+        {
+          "id": "appetite_bad",
+          "icon": "🍽️",
+          "label_en": "Poor appetite",
+          "label_hi": "भूख कम है",
+          "label_mr": "भूक कमी"
+        },
+        {
+          "id": "no_exercise",
+          "icon": "🏃",
+          "label_en": "No exercise",
+          "label_hi": "व्यायाम नहीं",
+          "label_mr": "व्यायाम नाही"
+        },
+        {
+          "id": "stressed",
+          "icon": "😰",
+          "label_en": "High stress",
+          "label_hi": "तनाव ज़्यादा",
+          "label_mr": "जास्त ताण"
+        },
+        {
+          "id": "all_fine",
+          "icon": "✅",
+          "label_en": "All is fine",
+          "label_hi": "सब ठीक है",
+          "label_mr": "सर्व ठीक आहे"
+        }
+      ]
+    },
+    {
+      "id": "review_general",
+      "field": "general_review",
+      "ui_type": "chips_multi",
+      "text_en": "Have you recently noticed any of these?",
+      "text_hi": "क्या आपको हाल ही में इनमें से कुछ हुआ है?",
+      "text_mr": "तुम्हाला अलीकडे यापैकी काही जाणवले का?",
+      "options": [
+        {
+          "id": "wt_loss",
+          "icon": "⚖️",
+          "label_en": "Unexplained weight loss",
+          "label_hi": "वज़न कम होना",
+          "label_mr": "वजन कमी होणे"
+        },
+        {
+          "id": "fatigue2",
+          "icon": "🥱",
+          "label_en": "Unusual tiredness",
+          "label_hi": "बहुत थकान",
+          "label_mr": "असामान्य थकवा"
+        },
+        {
+          "id": "fever2",
+          "icon": "🌡️",
+          "label_en": "Frequent fevers",
+          "label_hi": "बार-बार बुखार",
+          "label_mr": "वारंवार ताप"
+        },
+        {
+          "id": "none_gen",
+          "icon": "✅",
+          "label_en": "None of these",
+          "label_hi": "कुछ नहीं",
+          "label_mr": "यापैकी काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "review_chest",
+      "field": "cardiovascular_respiratory",
+      "ui_type": "chips_multi",
+      "text_en": "Have you had any of these recently?",
+      "text_hi": "क्या आपको हाल ही में ये हुआ है?",
+      "text_mr": "तुम्हाला अलीकडे हे झाले आहे का?",
+      "options": [
+        {
+          "id": "chest_pain",
+          "icon": "💔",
+          "label_en": "Chest pain",
+          "label_hi": "सीने में दर्द",
+          "label_mr": "छातीत दुखणे"
+        },
+        {
+          "id": "palpitation",
+          "icon": "💓",
+          "label_en": "Palpitations",
+          "label_hi": "घबराहट",
+          "label_mr": "धडधडणे"
+        },
+        {
+          "id": "breathless",
+          "icon": "😮",
+          "label_en": "Breathlessness",
+          "label_hi": "साँस फूलना",
+          "label_mr": "श्वास लागणे"
+        },
+        {
+          "id": "leg_swelling",
+          "icon": "🦵",
+          "label_en": "Leg swelling",
+          "label_hi": "पैरों में सूजन",
+          "label_mr": "पायांना सूज"
+        },
+        {
+          "id": "none_chest",
+          "icon": "✅",
+          "label_en": "None of these",
+          "label_hi": "कुछ नहीं",
+          "label_mr": "यापैकी काहीही नाही"
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "field": "additional_info",
+      "ui_type": "yesno",
+      "text_en": "Is there anything else you would like to tell the doctor?",
+      "text_hi": "क्या कोई और बात है जो आप डॉक्टर को बताना चाहते हैं?",
+      "text_mr": "डॉक्टरांना आणखी काही सांगायचे आहे का?",
+      "options": [
+        {
+          "id": "yes_more",
+          "icon": "✅",
+          "label_en": "Yes, I have something to add",
+          "label_hi": "हाँ, कुछ और बताना है",
+          "label_mr": "होय, आणखी काही सांगायचे आहे"
+        },
+        {
+          "id": "no_more",
+          "icon": "❌",
+          "label_en": "No, that is all",
+          "label_hi": "नहीं, बस यही है",
+          "label_mr": "नाही, बस एवढेच"
+        }
+      ]
+    }
+  ]
+}

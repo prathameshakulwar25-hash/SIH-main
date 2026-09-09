@@ -1,0 +1,98 @@
+{
+  "nodes": [
+    {
+      "id": "onset",
+      "socrates_category": "O",
+      "question_text": "How did the chest pain start?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Suddenly (Seconds to minutes)", "value": "sudden", "next": "character" },
+        { "text": "Gradually (Hours to days)", "value": "gradual", "next": "character" }
+      ]
+    },
+    {
+      "id": "character",
+      "socrates_category": "C",
+      "question_text": "How would you describe the pain?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Crushing / Heavy Pressure / Tightness", "value": "crushing", "next": "radiation_cardiac" },
+        { "text": "Sharp / Catching when breathing", "value": "pleuritic", "next": "associated_respiratory" },
+        { "text": "Burning", "value": "burning", "next": "exacerbating_eating" },
+        { "text": "Tearing / Ripping", "value": "tearing", "next": "radiation_back" }
+      ]
+    },
+    {
+      "id": "radiation_cardiac",
+      "socrates_category": "R",
+      "question_text": "Does the pain radiate anywhere?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "To the left arm, neck, or jaw", "value": "arm_jaw", "next": "associated_cardiac" },
+        { "text": "To the back", "value": "back", "next": "associated_cardiac" },
+        { "text": "Nowhere", "value": "none", "next": "associated_cardiac" }
+      ]
+    },
+    {
+      "id": "radiation_back",
+      "socrates_category": "R",
+      "question_text": "Does the pain radiate straight through to your back?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Yes, to the back", "value": "back", "next": "severity" },
+        { "text": "No, it stays in the front", "value": "none", "next": "severity" }
+      ]
+    },
+    {
+      "id": "associated_cardiac",
+      "socrates_category": "A",
+      "question_text": "Are you experiencing any of these other symptoms?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Sweating, dizziness, or palpitations", "value": "sweating_palpitations", "next": "severity" },
+        { "text": "Nausea or vomiting", "value": "nausea", "next": "severity" },
+        { "text": "None of the above", "value": "none", "next": "severity" }
+      ]
+    },
+    {
+      "id": "associated_respiratory",
+      "socrates_category": "A",
+      "question_text": "Are you experiencing any respiratory symptoms?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Severe breathlessness / shortness of breath", "value": "breathlessness", "next": "severity" },
+        { "text": "Coughing", "value": "cough", "next": "severity" },
+        { "text": "None", "value": "none", "next": "severity" }
+      ]
+    },
+    {
+      "id": "exacerbating_eating",
+      "socrates_category": "E",
+      "question_text": "Is the pain worse in specific situations?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Worse after meals or when lying down", "value": "after_meals", "next": "severity" },
+        { "text": "Unrelated to eating or position", "value": "unrelated", "next": "severity" }
+      ]
+    },
+    {
+      "id": "severity",
+      "socrates_category": "S",
+      "question_text": "On a scale of 1 to 10, how severe is the pain?",
+      "input_type": "slider",
+      "options": [
+        { "text": "1", "value": "1", "next": null },
+        { "text": "2", "value": "2", "next": null },
+        { "text": "3", "value": "3", "next": null },
+        { "text": "4", "value": "4", "next": null },
+        { "text": "5", "value": "5", "next": null },
+        { "text": "6", "value": "6", "next": null },
+        { "text": "7", "value": "7", "next": null },
+        { "text": "8", "value": "8", "next": null },
+        { "text": "9", "value": "9", "next": null },
+        { "text": "10", "value": "10", "next": null }
+      ]
+    }
+  ],
+  "start_node": "onset"
+}

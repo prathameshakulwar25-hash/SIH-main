@@ -1,0 +1,176 @@
+{
+  "sections": [
+    {
+      "section": "Prakriti",
+      "questions": [
+        {
+          "question_id": "p1",
+          "question_text": "How would you describe your body frame?",
+          "options": [
+            { "text": "Thin, light, prominent joints", "maps_to": "Vata" },
+            { "text": "Medium build, good muscle development", "maps_to": "Pitta" },
+            { "text": "Large, solid, sturdy frame", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p2",
+          "question_text": "What is your skin type like?",
+          "options": [
+            { "text": "Dry, rough, cool to touch", "maps_to": "Vata" },
+            { "text": "Warm, prone to acne/freckles, sensitive", "maps_to": "Pitta" },
+            { "text": "Thick, oily, smooth, cool", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p3",
+          "question_text": "How is your hair?",
+          "options": [
+            { "text": "Dry, brittle, sparse", "maps_to": "Vata" },
+            { "text": "Fine, prone to early graying or thinning", "maps_to": "Pitta" },
+            { "text": "Thick, lustrous, wavy or curly", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p4",
+          "question_text": "How do you respond to weather?",
+          "options": [
+            { "text": "Dislike cold and dry weather", "maps_to": "Vata" },
+            { "text": "Dislike heat and direct sun", "maps_to": "Pitta" },
+            { "text": "Dislike cold, damp, humid weather", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p5",
+          "question_text": "How is your sleep pattern?",
+          "options": [
+            { "text": "Light, interrupted, less hours", "maps_to": "Vata" },
+            { "text": "Sound, medium duration, feel rested", "maps_to": "Pitta" },
+            { "text": "Deep, heavy, prolonged", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p6",
+          "question_text": "What is your typical energy level?",
+          "options": [
+            { "text": "Comes in bursts, tire easily", "maps_to": "Vata" },
+            { "text": "Moderate, sustained, intense", "maps_to": "Pitta" },
+            { "text": "Steady, strong, long-lasting endurance", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p7",
+          "question_text": "How do you make decisions?",
+          "options": [
+            { "text": "Quickly but change mind easily", "maps_to": "Vata" },
+            { "text": "Clear, precise, analytical", "maps_to": "Pitta" },
+            { "text": "Slowly, after careful consideration", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p8",
+          "question_text": "How is your memory?",
+          "options": [
+            { "text": "Learn quickly, forget quickly", "maps_to": "Vata" },
+            { "text": "Sharp, clear, remember what's important", "maps_to": "Pitta" },
+            { "text": "Slow to learn but never forget", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p9",
+          "question_text": "How do you handle stress?",
+          "options": [
+            { "text": "Prone to worry, anxiety, fear", "maps_to": "Vata" },
+            { "text": "Prone to irritability, anger, frustration", "maps_to": "Pitta" },
+            { "text": "Remain calm, but may withdraw or become stubborn", "maps_to": "Kapha" }
+          ]
+        },
+        {
+          "question_id": "p10",
+          "question_text": "What is your communication style like?",
+          "options": [
+            { "text": "Fast, talkative, occasionally scattered", "maps_to": "Vata" },
+            { "text": "Direct, clear, sometimes argumentative", "maps_to": "Pitta" },
+            { "text": "Slow, methodical, comforting", "maps_to": "Kapha" }
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Agni",
+      "questions": [
+        {
+          "question_id": "a1",
+          "question_text": "How would you describe your appetite?",
+          "options": [
+            { "text": "Variable – sometimes hungry, sometimes not", "maps_to": "Vishama" },
+            { "text": "Intense – must eat on time, cannot tolerate skipping meals", "maps_to": "Tikshna" },
+            { "text": "Mild – can easily skip meals, not very hungry in mornings", "maps_to": "Manda" },
+            { "text": "Regular – moderate hunger at regular times", "maps_to": "Sama" }
+          ]
+        },
+        {
+          "question_id": "a2",
+          "question_text": "How well do you digest food?",
+          "options": [
+            { "text": "Irregularly – prone to bloating and gas", "maps_to": "Vishama" },
+            { "text": "Quickly – prone to acidity or heartburn", "maps_to": "Tikshna" },
+            { "text": "Slowly – feel heavy or lethargic after eating", "maps_to": "Manda" },
+            { "text": "Well – digest food without any issues", "maps_to": "Sama" }
+          ]
+        },
+        {
+          "question_id": "a3",
+          "question_text": "How often do you experience digestive discomfort?",
+          "options": [
+            { "text": "Frequently (bloating/gas)", "maps_to": "Vishama" },
+            { "text": "Frequently (acid reflux/burning)", "maps_to": "Tikshna" },
+            { "text": "Frequently (heaviness/sluggishness)", "maps_to": "Manda" },
+            { "text": "Rarely", "maps_to": "Sama" }
+          ]
+        },
+        {
+          "question_id": "a4",
+          "question_text": "How do you feel after a heavy meal?",
+          "options": [
+            { "text": "Uncomfortable, bloated", "maps_to": "Vishama" },
+            { "text": "Hungry again relatively soon", "maps_to": "Tikshna" },
+            { "text": "Very tired, sleepy, sluggish", "maps_to": "Manda" },
+            { "text": "Satisfied and energetic", "maps_to": "Sama" }
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Koshtha",
+      "questions": [
+        {
+          "question_id": "k1",
+          "question_text": "How are your bowel movements generally?",
+          "options": [
+            { "text": "Irregular, tend towards constipation, hard stools", "maps_to": "Krura" },
+            { "text": "Loose, frequent, easy to pass", "maps_to": "Mridu" },
+            { "text": "Regular, well-formed, once or twice daily", "maps_to": "Madhyama" }
+          ]
+        },
+        {
+          "question_id": "k2",
+          "question_text": "How does diet affect your bowels?",
+          "options": [
+            { "text": "Need high fiber or warm liquids to avoid constipation", "maps_to": "Krura" },
+            { "text": "Even mild laxatives or spicy food can cause loose stools", "maps_to": "Mridu" },
+            { "text": "Generally unaffected, handle most foods well", "maps_to": "Madhyama" }
+          ]
+        },
+        {
+          "question_id": "k3",
+          "question_text": "How often do you clear your bowels?",
+          "options": [
+            { "text": "Sometimes skip a day or have difficulty", "maps_to": "Krura" },
+            { "text": "More than twice a day easily", "maps_to": "Mridu" },
+            { "text": "Consistently 1-2 times a day", "maps_to": "Madhyama" }
+          ]
+        }
+      ]
+    }
+  ]
+}

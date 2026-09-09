@@ -1,0 +1,114 @@
+{
+  "nodes": [
+    {
+      "id": "site",
+      "socrates_category": "S",
+      "question_text": "Where exactly is the pain?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Right Lower Quadrant (RLQ)", "value": "rlq", "next": "onset" },
+        { "text": "Right Upper Quadrant (RUQ)", "value": "ruq", "next": "onset" },
+        { "text": "Epigastric (Upper middle)", "value": "epigastric", "next": "onset" },
+        { "text": "Left Lower Quadrant (LLQ)", "value": "llq", "next": "onset" },
+        { "text": "Left Upper Quadrant (LUQ)", "value": "luq", "next": "onset" },
+        { "text": "Generalized / All over", "value": "generalized", "next": "onset" }
+      ]
+    },
+    {
+      "id": "onset",
+      "socrates_category": "O",
+      "question_text": "How did the pain start?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Suddenly (Seconds to minutes)", "value": "sudden", "next": "character" },
+        { "text": "Gradually (Hours to days)", "value": "gradual", "next": "character" }
+      ]
+    },
+    {
+      "id": "character",
+      "socrates_category": "C",
+      "question_text": "How would you describe the pain?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Sharp / Stabbing", "value": "sharp", "next": "radiation_general" },
+        { "text": "Dull / Aching", "value": "dull", "next": "radiation_general" },
+        { "text": "Tearing / Ripping", "value": "tearing", "next": "radiation_back" },
+        { "text": "Cramping", "value": "cramping", "next": "associated_sx" }
+      ]
+    },
+    {
+      "id": "radiation_general",
+      "socrates_category": "R",
+      "question_text": "Does the pain radiate or move anywhere else?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Nowhere", "value": "none", "next": "associated_sx" },
+        { "text": "To the Back", "value": "back", "next": "associated_sx" },
+        { "text": "To the Right Shoulder", "value": "shoulder", "next": "associated_sx" },
+        { "text": "To the Groin", "value": "groin", "next": "associated_sx" }
+      ]
+    },
+    {
+      "id": "radiation_back",
+      "socrates_category": "R",
+      "question_text": "Does the pain radiate straight through to your back?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Yes, to the back", "value": "back", "next": "associated_sx" },
+        { "text": "No, it stays in the front", "value": "none", "next": "associated_sx" }
+      ]
+    },
+    {
+      "id": "associated_sx",
+      "socrates_category": "A",
+      "question_text": "Do you have any of these other symptoms?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Fever / Chills", "value": "fever", "next": "time_course" },
+        { "text": "Vomiting", "value": "vomiting", "next": "time_course" },
+        { "text": "Blood in stool or Vomiting blood", "value": "blood", "next": "time_course" },
+        { "text": "None of the above", "value": "none", "next": "time_course" }
+      ]
+    },
+    {
+      "id": "time_course",
+      "socrates_category": "T",
+      "question_text": "Is the pain constant or does it come and go?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Constant", "value": "constant", "next": "exacerbating" },
+        { "text": "Intermittent (comes and goes)", "value": "intermittent", "next": "exacerbating" }
+      ]
+    },
+    {
+      "id": "exacerbating",
+      "socrates_category": "E",
+      "question_text": "Does anything make the pain worse?",
+      "input_type": "single_choice",
+      "options": [
+        { "text": "Movement / Coughing", "value": "movement", "next": "severity" },
+        { "text": "Eating / Drinking", "value": "eating", "next": "severity" },
+        { "text": "Nothing specific", "value": "nothing", "next": "severity" }
+      ]
+    },
+    {
+      "id": "severity",
+      "socrates_category": "S",
+      "question_text": "On a scale of 1 to 10, how severe is the pain?",
+      "input_type": "slider",
+      "options": [
+        { "text": "1", "value": "1", "next": null },
+        { "text": "2", "value": "2", "next": null },
+        { "text": "3", "value": "3", "next": null },
+        { "text": "4", "value": "4", "next": null },
+        { "text": "5", "value": "5", "next": null },
+        { "text": "6", "value": "6", "next": null },
+        { "text": "7", "value": "7", "next": null },
+        { "text": "8", "value": "8", "next": null },
+        { "text": "9", "value": "9", "next": null },
+        { "text": "10", "value": "10", "next": null }
+      ]
+    }
+  ],
+  "start_node": "site"
+}
