@@ -373,41 +373,68 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
             (digits and len(digits) >= 10 and digits in clean_p_abha)):
             return dict(p)
 
-    # 2. Check SQLite database for an existing patient encounter with this ABHA
+    # 2. Check Database for an existing patient encounter with this ABHA
     try:
-        import sqlite3
-        db_path = os.path.join(os.path.dirname(__file__), "data", "ayush.db")
-        if os.path.exists(db_path):
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name, abha_id, gender, dob, abha_address, email, phone, profile_data "
-                "FROM consents WHERE LOWER(abha_id) = ? OR LOWER(abha_address) = ? OR phone = ? "
-                "ORDER BY timestamp DESC LIMIT 1",
-                (raw_clean.lower(), raw_clean.lower(), digits)
-            )
-            row = cursor.fetchone()
-            conn.close()
-            if row and row[0]:
-                stored_profile = {}
-                if row[7]:
-                    try:
-                        stored_profile = json.loads(row[7])
-                    except Exception:
-                        stored_profile = {}
+        from main import SessionLocal, ConsentRecord
+        db = SessionLocal()
+        try:
+            query = db.query(ConsentRecord).filter(
+                (ConsentRecord.abha_id.ilike(raw_clean)) |
+                (ConsentRecord.abha_address.ilike(raw_clean)) |
+                (ConsentRecord.phone == digits if digits else False)
+            ).order_by(ConsentRecord.timestamp.desc())
+            record = query.first()
+            if record and record.name:
+                stored_profile = record.profile_data if isinstance(record.profile_data, dict) else {}
                 return {
-                    "name": row[0],
-                    "abha_number": row[1] or raw_clean,
-                    "gender": row[2] or "M",
-                    "dob": row[3] or "1985-01-01",
-                    "abha_address": row[4] or (f"{raw_clean}@abdm" if "@" not in raw_clean else raw_clean),
-                    "email": row[5] or (stored_profile.get("email") if isinstance(stored_profile, dict) else None) or f"{row[0].lower().replace(' ', '.')}@example.com",
-                    "mobile": row[6] or (stored_profile.get("mobile") if isinstance(stored_profile, dict) else None) or "9876543210",
+                    "name": record.name,
+                    "abha_number": record.abha_id or raw_clean,
+                    "gender": record.gender or "M",
+                    "dob": record.dob or "1985-01-01",
+                    "abha_address": record.abha_address or (f"{raw_clean}@abdm" if "@" not in raw_clean else raw_clean),
+                    "email": record.email or (stored_profile.get("email") if isinstance(stored_profile, dict) else None) or f"{record.name.lower().replace(' ', '.')}@example.com",
+                    "mobile": record.phone or (stored_profile.get("mobile") if isinstance(stored_profile, dict) else None) or "9876543210",
                     "address": (stored_profile.get("address") if isinstance(stored_profile, dict) else None) or "Civil Lines, New Delhi - 110001",
-                    "photo": f"https://api.dicebear.com/7.x/avataaars/svg?seed={row[0].replace(' ', '')}"
+                    "photo": f"https://api.dicebear.com/7.x/avataaars/svg?seed={record.name.replace(' ', '')}"
                 }
+        finally:
+            db.close()
     except Exception as e:
-        print(f"[search_abha_by_id] SQLite lookup fallback note: {e}")
+        # Fallback to local SQLite if direct SessionLocal was not available
+        try:
+            import sqlite3
+            db_path = os.path.join(os.path.dirname(__file__), "data", "ayush.db")
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name, abha_id, gender, dob, abha_address, email, phone, profile_data "
+                    "FROM consents WHERE LOWER(abha_id) = ? OR LOWER(abha_address) = ? OR phone = ? "
+                    "ORDER BY timestamp DESC LIMIT 1",
+                    (raw_clean.lower(), raw_clean.lower(), digits)
+                )
+                row = cursor.fetchone()
+                conn.close()
+                if row and row[0]:
+                    stored_profile = {}
+                    if row[7]:
+                        try:
+                            stored_profile = json.loads(row[7]) if isinstance(row[7], str) else row[7]
+                        except Exception:
+                            stored_profile = {}
+                    return {
+                        "name": row[0],
+                        "abha_number": row[1] or raw_clean,
+                        "gender": row[2] or "M",
+                        "dob": row[3] or "1985-01-01",
+                        "abha_address": row[4] or (f"{raw_clean}@abdm" if "@" not in raw_clean else raw_clean),
+                        "email": row[5] or (stored_profile.get("email") if isinstance(stored_profile, dict) else None) or f"{row[0].lower().replace(' ', '.')}@example.com",
+                        "mobile": row[6] or (stored_profile.get("mobile") if isinstance(stored_profile, dict) else None) or "9876543210",
+                        "address": (stored_profile.get("address") if isinstance(stored_profile, dict) else None) or "Civil Lines, New Delhi - 110001",
+                        "photo": f"https://api.dicebear.com/7.x/avataaars/svg?seed={row[0].replace(' ', '')}"
+                    }
+        except Exception as err:
+            print(f"[search_abha_by_id] Database lookup note: {err}")
 
     # 3. Dynamic ABDM directory resolution for any valid 14-digit ABHA or @abdm handle
     if len(digits) >= 10 or "@" in raw_clean or len(raw_clean) >= 8:

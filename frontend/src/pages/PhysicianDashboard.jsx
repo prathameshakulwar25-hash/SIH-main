@@ -959,11 +959,18 @@ const PhysicianDashboard = () => {
                           <Edit3 className="w-3.5 h-3.5" />Edit Report
                         </button>
                         <button
-                          onClick={() => window.open(`/summary/${selectedId}`, '_blank')}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-                          title="Open patient-facing clinical encounter report in a new tab"
+                          onClick={() => window.open(`/summary/${selectedId}?role=physician`, '_blank')}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                          title="Open full clinical report with section editing and locking controls"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />View Patient Report
+                          <ExternalLink className="w-3.5 h-3.5" />Full Doctor Review
+                        </button>
+                        <button
+                          onClick={() => window.open(`/summary/${selectedId}`, '_blank')}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                          title="Open patient-facing read-only clinical summary in a new tab"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />View Patient Summary
                         </button>
                       </>
                     )}

@@ -5,7 +5,7 @@ import {
   FilePlus2, Flame, Printer, Download, Pill, Users, User, 
   Activity, ShieldCheck, ChevronDown, ChevronUp, AlertCircle,
   Check, Edit3, XCircle, RotateCcw, Save, MessageSquare, UserCheck,
-  Clock, Calendar, Send, Phone, Mail
+  Clock, Calendar, Send, Phone, Mail, Home
 } from 'lucide-react';
 import { useGlobalState } from '../context/GlobalStateContext';
 import { API_BASE } from '../config/api';
@@ -459,13 +459,40 @@ const SectionReviewControls = ({
   onAccept,
   onStartAmend,
   onStartReject,
-  locked = false
+  locked = false,
+  isPhysician = false
 }) => {
   const current = reviewState?.[sectionId];
   const status = current?.status;
   const timestamp = current?.timestamp;
   const reason = current?.reason;
 
+  // Patient View: Only show clean, non-editable verification badges (no action buttons)
+  if (!isPhysician) {
+    if (status === 'accepted') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          {t('Verified by Doctor')}
+        </span>
+      );
+    }
+    if (status === 'amended') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={timestamp}>
+          <Edit3 className="w-3 h-3 text-amber-600" />
+          {t('Doctor Reviewed')}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+        {t('Recorded at Intake')}
+      </span>
+    );
+  }
+
+  // Physician View: Full review status badges + interactive buttons
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
       {/* Status Badges */}
@@ -597,8 +624,9 @@ const ClinicalSummary = () => {
     navigate('/');
   };
 
-  // Physician authentication state
-  const isPhysicianUser = globalState?.role === 'physician';
+  // Physician authentication state: check GlobalState, URL query param ?role=physician, or sessionStorage
+  const roleFromQuery = searchParams.get('role');
+  const isPhysicianUser = (globalState?.role === 'physician') || (roleFromQuery === 'physician') || (sessionStorage.getItem('user_role') === 'physician');
 
   // Physician Review State initialized from globalState
   const [reviewState, setReviewState] = useState(() => {
@@ -1297,7 +1325,9 @@ const ClinicalSummary = () => {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-                  {lang === 'hi' ? 'मानक क्लिनिकल इतिहास सारांश' : 'Clinical History Summary'}
+                  {isPhysicianUser
+                    ? (lang === 'hi' ? 'चिकित्सक समीक्षा एवं क्लिनिकल सारांश' : 'Physician Clinical Encounter & Review')
+                    : (lang === 'hi' ? 'मरीज परामर्श सारांश रिपोर्ट' : 'Patient Clinical Consultation Summary')}
                 </h1>
                 {locked ? (
                   <span className="text-xs font-bold px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full flex items-center shrink-0 border border-emerald-200">
@@ -1305,90 +1335,120 @@ const ClinicalSummary = () => {
                   </span>
                 ) : (
                   <span className="text-xs font-bold px-3 py-1 bg-amber-100 text-amber-800 rounded-full flex items-center shrink-0 border border-amber-200">
-                    🟡 {lang === 'hi' ? 'सक्रिय सत्र (ड्राफ्ट)' : 'Draft Encounter'}
+                    {isPhysicianUser ? '🟡 ' + (lang === 'hi' ? 'सक्रिय सत्र (समीक्षा हेतु)' : 'Encounter Pending Review') : '⏳ ' + (lang === 'hi' ? 'प्रस्तुत — डॉक्टर समीक्षा प्रतीक्षित' : 'Submitted — Awaiting Doctor')}
                   </span>
                 )}
               </div>
               <p className="text-slate-500 text-sm mt-1">
-                Standard Outpatient / Emergency Digital Triage History
+                {isPhysicianUser
+                  ? 'Doctor Clinical Review Mode • Amend findings, verify intake data, and lock encounter'
+                  : 'Official patient-facing summary of recorded symptoms, AYUSH constitution, and clinical intake'}
               </p>
 
               {/* Top Persistent Review Status Badge */}
               <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${overallStatus.badgeClass}`}>
-                  <overallStatus.icon className="w-4 h-4" />
-                  {overallStatus.label}
-                </span>
+                {isPhysicianUser ? (
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${overallStatus.badgeClass}`}>
+                    <overallStatus.icon className="w-4 h-4" />
+                    {overallStatus.label}
+                  </span>
+                ) : (
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${locked ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300'}`}>
+                    {locked ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className="w-4 h-4 text-blue-600" />}
+                    {locked ? (lang === 'hi' ? 'चिकित्सक द्वारा सत्यापित एवं अनुमोदित' : 'Verified & Approved by Doctor') : (lang === 'hi' ? 'ओपीडी परामर्श हेतु प्रस्तुत' : 'Ready for Physician Consultation')}
+                  </span>
+                )}
                 <span className="text-[11px] font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
-                  Verified Patient Encounter Report
+                  {isPhysicianUser ? 'Doctor Verified Encounter Record' : (lang === 'hi' ? 'सुरक्षित एवं गोपनीय • केवल पढ़ने के लिए' : 'ABDM Compliant • Patient Read-Only')}
                 </span>
               </div>
             </div>
 
             {/* Header Action Buttons */}
             <div className="flex items-center gap-2 print:hidden flex-wrap">
-              {/* Only show physician controls if authenticated physician */}
-              {isPhysicianUser && (
-                <button 
-                  onClick={() => navigate(`/physician-dashboard?session=${sessionId}`)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-indigo-500"
-                  title="Open this patient record in Physician Dashboard"
-                >
-                  <Stethoscope className="w-4 h-4 mr-1.5" /> 
-                  {lang === 'hi' ? 'चिकित्सक डैशबोर्ड में खोलें' : 'Open in Physician Dashboard →'}
-                </button>
-              )}
-
-              <button 
-                onClick={handlePrint}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 border border-slate-200"
-                title="Print Clinical Record"
-              >
-                <Printer className="w-4 h-4 mr-1.5" /> {lang === 'hi' ? 'प्रिंट' : 'Print'}
-              </button>
-
-              {!locked && !canLock && (
-                <button 
-                  onClick={handleApproveAllSections}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-emerald-500 cursor-pointer"
-                  title="Approve all 9 clinical intake sections with one click"
-                >
-                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                  {lang === 'hi' ? 'सभी 9 अनुभाग स्वीकृत करें' : 'Approve All 9 Sections'}
-                </button>
-              )}
-
-              {!locked ? (
-                <div className="flex flex-col items-end">
+              {/* If Physician: Show Doctor Dashboard navigation & lock/approve controls */}
+              {isPhysicianUser ? (
+                <>
                   <button 
-                    onClick={handleLock} 
-                    disabled={locking || !canLock}
-                    className={`px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 ${
-                      canLock 
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer' 
-                        : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 opacity-60'
-                    }`}
-                    title={canLock ? 'Lock Clinical Session' : 'Review all 9 sections before locking'}
+                    onClick={() => navigate(`/physician-dashboard?session=${sessionId}`)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-indigo-500 cursor-pointer"
+                    title="Open this patient record in Physician Dashboard"
                   >
-                    <Lock className="w-4 h-4 mr-1.5" />
-                    {locking ? (lang === 'hi' ? 'लॉकिंग...' : 'Locking...') : (lang === 'hi' ? 'पुष्टि और लॉक करें' : 'Confirm & Lock')}
+                    <Stethoscope className="w-4 h-4 mr-1.5" /> 
+                    {lang === 'hi' ? 'चिकित्सक डैशबोर्ड में खोलें' : 'Open in Physician Dashboard →'}
                   </button>
-                  {!canLock && (
-                    <span className="text-[10px] text-amber-700 font-semibold mt-1 max-w-[190px] text-right">
-                      {t('All 9 sections must be reviewed by physician prior to lock')}
-                    </span>
+
+                  <button 
+                    onClick={handlePrint}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 border border-slate-200 cursor-pointer"
+                    title="Print Clinical Record"
+                  >
+                    <Printer className="w-4 h-4 mr-1.5" /> {lang === 'hi' ? 'प्रिंट' : 'Print'}
+                  </button>
+
+                  {!locked && !canLock && (
+                    <button 
+                      onClick={handleApproveAllSections}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-emerald-500 cursor-pointer"
+                      title="Approve all 9 clinical intake sections with one click"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                      {lang === 'hi' ? 'सभी 9 अनुभाग स्वीकृत करें' : 'Approve All 9 Sections'}
+                    </button>
                   )}
-                </div>
+
+                  {!locked ? (
+                    <div className="flex flex-col items-end">
+                      <button 
+                        onClick={handleLock} 
+                        disabled={locking || !canLock}
+                        className={`px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 ${
+                          canLock 
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer' 
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 opacity-60'
+                        }`}
+                        title={canLock ? 'Lock Clinical Session' : 'Review all 9 sections before locking'}
+                      >
+                        <Lock className="w-4 h-4 mr-1.5" />
+                        {locking ? (lang === 'hi' ? 'लॉकिंग...' : 'Locking...') : (lang === 'hi' ? 'पुष्टि और लॉक करें' : 'Confirm & Lock')}
+                      </button>
+                      {!canLock && (
+                        <span className="text-[10px] text-amber-700 font-semibold mt-1 max-w-[190px] text-right">
+                          {t('All 9 sections must be reviewed by physician prior to lock')}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handleExport}
+                      disabled={exporting}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 mr-1.5" />
+                      {exporting ? (lang === 'hi' ? 'निर्यात हो रहा है...' : 'Exporting...') : (lang === 'hi' ? 'FHIR R4 बंडल डाउनलोड' : 'Export FHIR R4 Bundle')}
+                    </button>
+                  )}
+                </>
               ) : (
-                <button 
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 disabled:opacity-50"
-                >
-                  <Download className="w-4 h-4 mr-1.5" />
-                  {exporting ? (lang === 'hi' ? 'निर्यात हो रहा है...' : 'Exporting...') : (lang === 'hi' ? 'FHIR R4 बंडल डाउनलोड' : 'Export FHIR R4 Bundle')}
-                </button>
+                /* Patient View Action Buttons: Print / Save PDF & Return to Patient Home */
+                <>
+                  <button 
+                    onClick={handlePrint}
+                    className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 shadow-sm border border-teal-500 cursor-pointer"
+                    title="Print or Save PDF"
+                  >
+                    <Printer className="w-4 h-4 mr-1.5" /> {lang === 'hi' ? 'प्रिंट / पीडीएफ सेव करें' : 'Print / Save PDF'}
+                  </button>
+
+                  <button 
+                    onClick={() => navigate('/patient-home')}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm flex items-center transition active:scale-95 border border-slate-200 cursor-pointer"
+                    title="Return to Patient Portal"
+                  >
+                    <Home className="w-4 h-4 mr-1.5" /> {lang === 'hi' ? 'पोर्टल पर लौटें' : 'Patient Home'}
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1473,8 +1533,51 @@ const ClinicalSummary = () => {
           </div>
         </div>
 
+        {/* Patient Read-Only Notice Banner */}
+        {!isPhysicianUser && (
+          <div className="mt-5 mb-6 bg-gradient-to-r from-teal-50 via-emerald-50 to-teal-50 border border-teal-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-teal-100 text-teal-800 rounded-xl shrink-0 shadow-2xs">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">
+                  {lang === 'hi' ? 'ओपीडी परामर्श सारांश (केवल पढ़ने के लिए)' : 'OPD Clinical Intake Summary (Patient Read-Only)'}
+                </h4>
+                <p className="text-xs text-slate-600 mt-0.5 max-w-2xl">
+                  {locked
+                    ? (lang === 'hi' ? 'यह रिपोर्ट आपके चिकित्सक द्वारा जांची, प्रमाणित और लॉक कर दी गई है।' : 'This encounter report has been reviewed, confirmed, and digitally locked by your attending physician.')
+                    : (lang === 'hi' ? 'आपकी जानकारी सुरक्षित रूप से दर्ज कर ली गई है। किसी भी बदलाव या दवा की सलाह केवल आपके चिकित्सक द्वारा दी जाएगी।' : 'Your intake has been recorded and submitted to the hospital OPD. Clinical modifications and prescriptions can only be performed by your attending physician.')}
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${locked ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'}`}>
+                {locked ? (lang === 'hi' ? '✓ चिकित्सक सत्यापित' : '✓ Physician Verified') : (lang === 'hi' ? '⏳ डॉक्टर समीक्षा प्रतीक्षित' : '⏳ Awaiting Doctor Review')}
+              </span>
+            </div>
+          </div>
+        )}
 
-        {/* FHIR Output Modal / Collapsible */}
+        {/* Attending Physician Advice / Prescription Notes (if available) */}
+        {data?.physician_notes && (
+          <div className="mb-6 bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 text-indigo-950 font-black mb-2">
+              <Stethoscope className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-base tracking-tight">
+                {lang === 'hi' ? 'चिकित्सक के निर्देश एवं दवा सलाह' : 'Attending Physician\'s Clinical Notes & Advice'}
+              </h3>
+              <span className="text-[11px] font-bold bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full ml-auto border border-indigo-200">
+                {data?.physician_id ? `Dr. ID: ${data.physician_id}` : 'Doctor Signed'}
+              </span>
+            </div>
+            <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed bg-white/90 p-4 rounded-xl border border-indigo-100 font-medium">
+              {data.physician_notes}
+            </p>
+          </div>
+        )}
+
+        {/* FHIR Output Modal / Collapsible (Only for Physician or if FHIR was generated) */}
         {fhirJson && (
           <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 mb-6 border border-slate-700 shadow-md">
             <div className="flex justify-between items-center pb-2 border-b border-slate-700">
@@ -1506,14 +1609,20 @@ const ClinicalSummary = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                    Clinical & AYUSH Encounter Report
+                    {isPhysicianUser
+                      ? (lang === 'hi' ? 'क्लिनिकल एवं आयुष परामर्श रिपोर्ट (चिकित्सक दृश्य)' : 'Clinical & AYUSH Encounter Report')
+                      : (lang === 'hi' ? 'परामर्श सारांश एवं क्लिनिकल इतिहास' : 'Clinical Consultation Summary')}
                   </h2>
-                  <p className="text-xs text-slate-500 font-medium">Standard English OPD Report with Dashavidha Pariksha (दशविध परीक्षा)</p>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {isPhysicianUser
+                      ? 'Standard English OPD Report with Dashavidha Pariksha (दशविध परीक्षा)'
+                      : 'Comprehensive Intake Record • Synthesized for Hospital Outpatient Care'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-full font-bold shadow-2xs">
-                  🌐 English Standard (Doctor View)
+                <span className={`text-xs border px-3 py-1.5 rounded-full font-bold shadow-2xs ${isPhysicianUser ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-teal-50 border-teal-200 text-teal-700'}`}>
+                  {isPhysicianUser ? '🩺 Doctor Review Mode' : '📋 Patient Summary View'}
                 </span>
               </div>
             </div>
@@ -1602,11 +1711,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'chief_complaint' ? (
+            {isPhysicianUser && editingSection === 'chief_complaint' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Chief Complaint</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1687,6 +1797,7 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
@@ -1706,7 +1817,7 @@ const ClinicalSummary = () => {
               </div>
             )}
 
-            {editingSection === 'hpi' ? (
+            {isPhysicianUser && editingSection === 'hpi' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} HPI & SOCRATES</p>
                 <div>
@@ -1924,11 +2035,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'past_medical_surgical' ? (
+            {isPhysicianUser && editingSection === 'past_medical_surgical' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Past Medical & Surgical History</p>
                 <div className="grid md:grid-cols-2 gap-3">
@@ -2017,11 +2129,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'drug_allergy' ? (
+            {isPhysicianUser && editingSection === 'drug_allergy' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Drug & Allergy History</p>
                 <div>
@@ -2138,11 +2251,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'family_history' ? (
+            {isPhysicianUser && editingSection === 'family_history' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Family History</p>
                 <textarea 
@@ -2199,11 +2313,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'personal_history' ? (
+            {isPhysicianUser && editingSection === 'personal_history' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Personal History</p>
                 <textarea 
@@ -2271,11 +2386,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'ros' ? (
+            {isPhysicianUser && editingSection === 'ros' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Review of Systems (ROS)</p>
                 <div className="space-y-2">
@@ -2347,11 +2463,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'prior_investigations' ? (
+            {isPhysicianUser && editingSection === 'prior_investigations' ? (
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">{t('Amend')} Prior Investigations</p>
                 <p className="text-xs text-slate-600">Enter amendment notes or additional clinical investigations findings:</p>
@@ -2609,11 +2726,12 @@ const ClinicalSummary = () => {
                   onStartAmend={handleStartAmend}
                   onStartReject={handleStartReject}
                   locked={data?.locked}
+                  isPhysician={isPhysicianUser}
                 />
               </div>
             </div>
 
-            {editingSection === 'ayush_profile' ? (
+            {isPhysicianUser && editingSection === 'ayush_profile' ? (
               <div className="p-4 bg-white rounded-xl border border-amber-300 space-y-3 shadow-sm">
                 <p className="text-xs font-bold text-orange-900 uppercase tracking-wider">{t('Amend')} AYUSH Profile</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

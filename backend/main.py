@@ -215,11 +215,31 @@ def detect_step_meta_from_reply(reply: str, user_msg_count: int) -> Optional[Dic
 
 
 # Database setup
-DB_DIR = os.path.join(os.path.dirname(__file__), "data")
-os.makedirs(DB_DIR, exist_ok=True)
-DB_PATH = os.path.join(DB_DIR, "ayush.db")
-DATABASE_URL = f"sqlite:///{DB_PATH.replace(os.sep, '/')}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+raw_db_url = os.getenv("DATABASE_URL", "").strip()
+
+if raw_db_url:
+    # Modern SQLAlchemy 1.4+ expects postgresql:// instead of postgres:// (common in Supabase/Render/Heroku)
+    if raw_db_url.startswith("postgres://"):
+        raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = raw_db_url
+    # Production connection pooling for PostgreSQL
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=300,
+        pool_pre_ping=True
+    )
+    db_masked = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "configured"
+    print(f"[Database] Connected to production database at: {db_masked}")
+else:
+    DB_DIR = os.path.join(os.path.dirname(__file__), "data")
+    os.makedirs(DB_DIR, exist_ok=True)
+    DB_PATH = os.path.join(DB_DIR, "ayush.db")
+    DATABASE_URL = f"sqlite:///{DB_PATH.replace(os.sep, '/')}"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    print(f"[Database] Using local SQLite database: {DB_PATH}")
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -281,33 +301,36 @@ class Document(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# Safe SQLite schema migration for added columns on existing databases
-from sqlalchemy import text
+# Safe database-agnostic schema migration for added columns on existing databases
+from sqlalchemy import inspect, text
 with engine.connect() as conn:
     try:
-        columns = [row[1] for row in conn.execute(text("PRAGMA table_info(consents)")).fetchall()]
-        if "name" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN name VARCHAR"))
-        if "gender" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN gender VARCHAR"))
-        if "dob" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN dob VARCHAR"))
-        if "abha_address" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN abha_address VARCHAR"))
-        if "profile_data" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN profile_data JSON"))
-        if "email" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN email VARCHAR"))
-        if "phone" not in columns:
-            conn.execute(text("ALTER TABLE consents ADD COLUMN phone VARCHAR"))
-        # Migrate physician_reviews table
-        pr_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(physician_reviews)")).fetchall()]
-        if "urgency" not in pr_cols and pr_cols:
-            conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN urgency VARCHAR DEFAULT 'routine'"))
-        if "critical" not in pr_cols and pr_cols:
-            conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN critical INTEGER DEFAULT 0"))
-        if "red_flags" not in pr_cols and pr_cols:
-            conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN red_flags JSON"))
+        inspector = inspect(engine)
+        if inspector.has_table("consents"):
+            columns = [col["name"] for col in inspector.get_columns("consents")]
+            if "name" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN name VARCHAR"))
+            if "gender" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN gender VARCHAR"))
+            if "dob" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN dob VARCHAR"))
+            if "abha_address" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN abha_address VARCHAR"))
+            if "profile_data" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN profile_data JSON"))
+            if "email" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN email VARCHAR"))
+            if "phone" not in columns:
+                conn.execute(text("ALTER TABLE consents ADD COLUMN phone VARCHAR"))
+
+        if inspector.has_table("physician_reviews"):
+            pr_cols = [col["name"] for col in inspector.get_columns("physician_reviews")]
+            if "urgency" not in pr_cols and pr_cols:
+                conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN urgency VARCHAR DEFAULT 'routine'"))
+            if "critical" not in pr_cols and pr_cols:
+                conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN critical INTEGER DEFAULT 0"))
+            if "red_flags" not in pr_cols and pr_cols:
+                conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN red_flags JSON"))
         conn.commit()
     except Exception as e:
         print(f"Notice: Schema migration check: {e}")
@@ -544,6 +567,8 @@ def get_summary(session_id: str, db: Session = Depends(get_db)):
         "abha_address": consent.abha_address if (consent and consent.abha_address) else None,
     }
 
+    review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
+
     return {
         "session_id": session_id,
         "patient_name": patient_details["name"],
@@ -552,6 +577,9 @@ def get_summary(session_id: str, db: Session = Depends(get_db)):
         "abha_id": consent.abha_id if consent else None,
         "created_at": consent.timestamp if consent else (meta.timestamp if meta else None),
         "locked": meta.locked == 1 if meta else False,
+        "physician_notes": review.notes if review else None,
+        "physician_id": review.physician_id if review else None,
+        "physician_verified": bool((review and review.verified == 1) or (meta and meta.locked == 1)),
         "ayush_profile": {
             "prakriti": ayush.prakriti if ayush else None,
             "agni": ayush.agni if ayush else None,
@@ -581,6 +609,9 @@ def lock_session(session_id: str, db: Session = Depends(get_db)):
         meta = SessionMeta(session_id=session_id)
         db.add(meta)
     meta.locked = 1
+    review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
+    if review:
+        review.verified = 1
     db.commit()
     return {"status": "locked", "session_id": session_id}
 
