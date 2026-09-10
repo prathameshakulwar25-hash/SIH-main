@@ -400,6 +400,16 @@ def ensure_not_locked(db: Session, session_id: str):
         db.add(meta)
         db.commit()
 
+def generate_opd_token(db: Session, channel: str = "kiosk") -> str:
+    """Generates an OPD Queue Token (e.g. M-12 for Mobile QR, K-04 for Physical Kiosk)."""
+    try:
+        total = db.query(ConsentRecord).count()
+    except Exception:
+        total = int(time.time()) % 100
+    prefix = "M" if channel == "mobile_qr" else "K"
+    num = (total % 90) + 10
+    return f"{prefix}-{num:02d}"
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -1118,6 +1128,14 @@ def list_physician_reports(db: Session = Depends(get_db)):
             if "EMERGENCY" in flags_str or "RED_FLAG" in flags_str or "CRITICAL" in flags_str:
                 urgency = "urgent"
                 critical = True
+        prof_data = consent.profile_data if (consent and isinstance(consent.profile_data, dict)) else {}
+        token_num = prof_data.get("token_number")
+        if not token_num:
+            token_prefix = "M" if prof_data.get("channel") == "mobile_qr" else "K"
+            fallback_idx = (abs(hash(intake.session_id)) % 89) + 10
+            token_num = f"{token_prefix}-{fallback_idx}"
+        channel = prof_data.get("channel", "kiosk")
+
         result.append({
             "session_id": intake.session_id,
             "patient_name": consent.name if consent and consent.name else "Ayushman Patient",
@@ -1134,11 +1152,31 @@ def list_physician_reports(db: Session = Depends(get_db)):
             "verified": bool(review.verified) if review else False,
             "abha_id": consent.abha_id if consent else None,
             "flags": intake.flags or [],
+            "token_number": token_num,
+            "intake_channel": channel,
+            "channel": channel,
         })
     # Sort: emergency > urgent > routine, then by timestamp desc
     urgency_order = {"emergency": 0, "urgent": 1, "routine": 2}
     result.sort(key=lambda r: (urgency_order.get(r["urgency"], 2), r["timestamp"]))
     return {"reports": result, "total": len(result)}
+
+class CallTokenRequest(BaseModel):
+    token: Optional[str] = None
+    session_id: Optional[str] = None
+    room: Optional[str] = "Room 104 - AYUSH & General OPD"
+
+@physician_router.post("/queue/call")
+def call_queue_token(req: CallTokenRequest):
+    """Broadcasts calling a patient token into the consultation chamber."""
+    return {
+        "status": "token_called",
+        "token": req.token,
+        "session_id": req.session_id,
+        "room": req.room,
+        "timestamp": datetime.utcnow().isoformat(),
+        "announcement": f"Patient Token {req.token}, please proceed to {req.room}."
+    }
 
 @physician_router.get("/reports/{session_id}")
 def get_physician_report(session_id: str, db: Session = Depends(get_db)):
@@ -1162,6 +1200,10 @@ def get_physician_report(session_id: str, db: Session = Depends(get_db)):
             "raw_text": doc.raw_text
         })
 
+    prof_data = consent.profile_data if (consent and isinstance(consent.profile_data, dict)) else {}
+    token_num = prof_data.get("token_number") or f"OPD-{(abs(hash(session_id)) % 89) + 10}"
+    channel = prof_data.get("channel", "kiosk")
+
     patient_details = {
         "name": consent.name if consent and consent.name else "Ayushman Patient",
         "gender": consent.gender if consent else None,
@@ -1171,6 +1213,8 @@ def get_physician_report(session_id: str, db: Session = Depends(get_db)):
         "email": consent.email if consent else None,
         "abha_id": consent.abha_id if consent else None,
         "abha_address": consent.abha_address if consent else None,
+        "token_number": token_num,
+        "channel": channel,
     }
 
     return {
@@ -1193,6 +1237,9 @@ def get_physician_report(session_id: str, db: Session = Depends(get_db)):
         } if ayush else None,
         "documents": docs_items,
         "review_steps": (intake.summary or {}).get("physician_review_steps", {}) if intake else {},
+        "token_number": token_num,
+        "intake_channel": channel,
+        "channel": channel,
     }
 
 @physician_router.post("/reports/{session_id}/review-steps")
@@ -1302,6 +1349,7 @@ class PatientVerifyOtpRequest(BaseModel):
     mobile: str
     otp: str
     abha_id: Optional[str] = None
+    channel: Optional[str] = "kiosk"
 
 class PhysicianSendOtpRequest(BaseModel):
     pin: str
@@ -1373,6 +1421,8 @@ def patient_verify_otp(req: PatientVerifyOtpRequest, db: Session = Depends(get_d
     
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     effective_abha = req.abha_id.strip() if req.abha_id and req.abha_id.strip() else f"ABHA-{int(time.time())}"
+    channel = req.channel or "kiosk"
+    token_number = generate_opd_token(db, channel)
     
     # Save/create consent record
     consent = ConsentRecord(
@@ -1381,7 +1431,13 @@ def patient_verify_otp(req: PatientVerifyOtpRequest, db: Session = Depends(get_d
         name=name,
         phone=mobile,
         status="granted",
-        profile_data={"source": "otp-login", "mobile": mobile, "verified": True}
+        profile_data={
+            "source": "otp-login",
+            "mobile": mobile,
+            "verified": True,
+            "channel": channel,
+            "token_number": token_number
+        }
     )
     db.add(consent)
     db.commit()
@@ -1393,7 +1449,9 @@ def patient_verify_otp(req: PatientVerifyOtpRequest, db: Session = Depends(get_d
         "patient_name": name,
         "mobile": mobile,
         "abha_id": effective_abha,
-        "consent_granted": True
+        "consent_granted": True,
+        "token_number": token_number,
+        "channel": channel
     }
 
 class PatientSendEmailOtpRequest(BaseModel):
@@ -1404,10 +1462,12 @@ class PatientVerifyEmailOtpRequest(BaseModel):
     name: str
     email: str
     otp: str
+    channel: Optional[str] = "kiosk"
 
 class PatientAbhaLoginRequest(BaseModel):
     name: Optional[str] = None
     abha_id: str
+    channel: Optional[str] = "kiosk"
 
 @auth_router.post("/patient/send-email-otp")
 def patient_send_email_otp(req: PatientSendEmailOtpRequest):
@@ -1475,6 +1535,8 @@ def patient_verify_email_otp(req: PatientVerifyEmailOtpRequest, db: Session = De
     AUTH_OTP_STORE.pop(cache_key, None)
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     abha_id = f"ABHA-{int(time.time())}"
+    channel = req.channel or "kiosk"
+    token_number = generate_opd_token(db, channel)
     
     consent = ConsentRecord(
         session_id=session_id,
@@ -1482,7 +1544,13 @@ def patient_verify_email_otp(req: PatientVerifyEmailOtpRequest, db: Session = De
         name=name,
         email=email,
         status="granted",
-        profile_data={"source": "email-login", "email": email, "verified": True}
+        profile_data={
+            "source": "email-login",
+            "email": email,
+            "verified": True,
+            "channel": channel,
+            "token_number": token_number
+        }
     )
     db.add(consent)
     db.commit()
@@ -1494,7 +1562,9 @@ def patient_verify_email_otp(req: PatientVerifyEmailOtpRequest, db: Session = De
         "patient_name": name,
         "email": email,
         "abha_id": abha_id,
-        "consent_granted": True
+        "consent_granted": True,
+        "token_number": token_number,
+        "channel": channel
     }
 
 @auth_router.post("/patient/abha-login")
@@ -1514,6 +1584,8 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
     effective_dob = matched_profile.get("dob") if matched_profile else None
     effective_phone = matched_profile.get("mobile") if matched_profile else None
     effective_email = matched_profile.get("email") if matched_profile else None
+    channel = req.channel or "kiosk"
+    token_number = generate_opd_token(db, channel)
     
     consent = ConsentRecord(
         session_id=session_id,
@@ -1525,7 +1597,12 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
         phone=effective_phone,
         email=effective_email,
         status="granted",
-        profile_data={"source": "abha-direct-login", "profile": matched_profile or {"abha_id": abha_raw}}
+        profile_data={
+            "source": "abha-direct-login",
+            "profile": matched_profile or {"abha_id": abha_raw},
+            "channel": channel,
+            "token_number": token_number
+        }
     )
     db.add(consent)
     db.commit()
@@ -1543,7 +1620,9 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
         "phone": consent.phone,
         "email": consent.email,
         "profile": matched_profile,
-        "consent_granted": True
+        "consent_granted": True,
+        "token_number": token_number,
+        "channel": channel
     }
 
 @auth_router.post("/physician/send-otp")
@@ -1614,6 +1693,7 @@ class Msg91WidgetVerifyRequest(BaseModel):
     abha_id: Optional[str] = None
     role: Optional[str] = "patient"
     pin: Optional[str] = None
+    channel: Optional[str] = "kiosk"
 
 @auth_router.post("/msg91/verify-widget-token")
 def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depends(get_db)):
@@ -1643,6 +1723,8 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     name = (req.name or "Patient").strip()
     effective_abha = req.abha_id.strip() if req.abha_id and req.abha_id.strip() else f"ABHA-{int(time.time())}"
+    channel = req.channel or "kiosk"
+    token_number = generate_opd_token(db, channel)
     
     if req.role == "physician":
         return {
@@ -1660,7 +1742,13 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
         name=name,
         phone=verified_mobile,
         status="granted",
-        profile_data={"source": "msg91-sendotp-widget", "mobile": verified_mobile, "verified": True}
+        profile_data={
+            "source": "msg91-sendotp-widget",
+            "mobile": verified_mobile,
+            "verified": True,
+            "channel": channel,
+            "token_number": token_number
+        }
     )
     db.add(consent)
     db.commit()
@@ -1672,7 +1760,9 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
         "patient_name": name,
         "mobile": verified_mobile,
         "abha_id": effective_abha,
-        "consent_granted": True
+        "consent_granted": True,
+        "token_number": token_number,
+        "channel": channel
     }
 
 app.include_router(auth_router)
@@ -1684,5 +1774,6 @@ app.include_router(documents_router)
 app.include_router(summary_router)
 app.include_router(llm_router)
 app.include_router(physician_router)
+
 
 

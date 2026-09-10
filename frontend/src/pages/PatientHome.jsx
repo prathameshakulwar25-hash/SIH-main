@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalState } from '../context/GlobalStateContext';
 import {
   Mic, ArrowRight, Globe, Shield, Stethoscope, Activity, FileText,
-  CheckCircle2, Lock, ShieldCheck, Sparkles, User, ChevronRight, Upload, Server
+  CheckCircle2, Lock, ShieldCheck, Sparkles, User, ChevronRight, Upload, Server,
+  Smartphone, QrCode
 } from 'lucide-react';
 import { JeevanBrand } from '../components/JeevanLogo';
 import ClinicalConsentModal from '../components/ClinicalConsentModal';
@@ -93,11 +94,16 @@ const STEPS = [
 
 const PatientHome = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlChannel = searchParams.get('channel');
   const { globalState, updateState } = useGlobalState();
   const lang = globalState?.language || 'en';
   const t = T[lang] || T.en;
   const defaultName = globalState?.patientName || sessionStorage.getItem('patient_name') || 'Rahul Dev Sharma';
   const name = defaultName;
+
+  const tokenNumber = globalState?.token_number || sessionStorage.getItem('token_number') || 'M-08';
+  const intakeChannel = globalState?.intake_channel || urlChannel || sessionStorage.getItem('intake_channel') || 'mobile_qr';
 
   const consentGranted = Boolean(globalState?.consent_granted);
   const [showConsentModal, setShowConsentModal] = useState(false);
@@ -108,12 +114,14 @@ const PatientHome = () => {
       updateState({
         role: 'patient',
         patientName: defaultName,
-        session_id: sessionStorage.getItem('session_id') || `session-${Date.now()}`
+        session_id: sessionStorage.getItem('session_id') || `session-${Date.now()}`,
+        token_number: tokenNumber,
+        intake_channel: intakeChannel,
       });
     } else if (globalState.role !== 'patient') {
       navigate('/');
     }
-  }, [globalState?.role, defaultName, navigate, updateState]);
+  }, [globalState?.role, defaultName, navigate, updateState, tokenNumber, intakeChannel]);
 
   const handleStartIntake = () => {
     if (!consentGranted) {
@@ -222,6 +230,55 @@ const PatientHome = () => {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Live OPD Queue Token Card */}
+        <div className="w-full bg-gradient-to-br from-teal-900 via-teal-800 to-slate-900 text-white rounded-2xl p-4 shadow-md border border-teal-700/50 text-left relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-28 h-28 bg-teal-400/10 rounded-full blur-xl pointer-events-none" />
+          
+          <div className="flex items-start justify-between gap-2 relative z-10">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest bg-teal-400/20 text-teal-200 px-2 py-0.5 rounded-full border border-teal-300/30">
+                  Live OPD Queue Token
+                </span>
+                <span className="text-[10px] font-bold bg-emerald-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> Active
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-white">
+                  Token #{tokenNumber}
+                </span>
+                <span className="text-xs text-teal-200 font-medium">
+                  {intakeChannel === 'mobile_qr' ? '📱 Mobile (Scan & Sit)' : '🖥️ Physical Kiosk'}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <span className="text-[10px] uppercase font-bold text-teal-300 block">Assigned Chamber</span>
+              <span className="text-xs font-extrabold text-white bg-white/15 px-2.5 py-1 rounded-lg border border-white/20 inline-block mt-0.5">
+                Room 104
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-teal-700/60 grid grid-cols-2 gap-2 text-xs relative z-10">
+            <div className="bg-white/10 p-2 rounded-xl">
+              <span className="text-[10px] text-teal-200 block font-medium">Doctor Currently Seeing:</span>
+              <strong className="text-white font-mono text-sm">#M-05</strong>
+            </div>
+            <div className="bg-white/10 p-2 rounded-xl">
+              <span className="text-[10px] text-teal-200 block font-medium">Estimated Wait Time:</span>
+              <strong className="text-amber-300 font-semibold text-sm">~6-8 mins</strong>
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-teal-100/80">
+            <Sparkles className="w-3.5 h-3.5 text-teal-300 shrink-0" />
+            <span>Complete your voice intake below so the doctor has your report ready when called.</span>
           </div>
         </div>
 

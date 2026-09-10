@@ -5,7 +5,8 @@ import {
   Stethoscope, AlertTriangle, CheckCircle2, Clock, User, FileText,
   RefreshCw, ChevronDown, ChevronUp, Edit3, Save, Shield, ShieldCheck, LogOut,
   Pill, MessageSquare, Activity, HeartPulse, XCircle, Loader2, Printer,
-  Eye, RotateCcw, Sparkles, Download, QrCode, ExternalLink, Check, CheckCheck, Zap
+  Eye, RotateCcw, Sparkles, Download, QrCode, ExternalLink, Check, CheckCheck, Zap,
+  Smartphone, Bell, Volume2, Monitor
 } from 'lucide-react';
 import AbhaCard from '../components/AbhaCard';
 import { JeevanLogoIcon } from '../components/JeevanLogo';
@@ -233,6 +234,37 @@ const PhysicianDashboard = () => {
   const [stepAmendmentText, setStepAmendmentText] = useState('');
   const [savingStepAmend, setSavingStepAmend] = useState(false);
   const reportEditorRef = useRef(null);
+
+  // Token Queue Calling State
+  const [callingToken, setCallingToken] = useState(null);
+  const [calledMessage, setCalledMessage] = useState('');
+
+  const handleCallToken = async (patientToken, patientName) => {
+    const tNum = patientToken || detail?.token_number || 'M-01';
+    setCallingToken(tNum);
+    const pName = patientName || detail?.patient_name || 'Patient';
+    const announcement = `Token number ${tNum}, ${pName}, please proceed to Room 104.`;
+    setCalledMessage(`Token #${tNum} (${pName}) called to Room 104`);
+
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(announcement);
+        utter.rate = 0.95;
+        window.speechSynthesis.speak(utter);
+      }
+    } catch (_) {}
+
+    try {
+      await fetch(`${API_BASE}/api/physician/queue/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tNum, session_id: selectedId, room: 'Room 104' })
+      });
+    } catch (_) {}
+
+    setTimeout(() => setCallingToken(null), 5000);
+  };
 
   const fetchReports = useCallback(async () => {
     setLoadingList(true);
@@ -600,12 +632,28 @@ const PhysicianDashboard = () => {
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${cfg.dot}`} />
                         <div className="min-w-0">
-                          <p className="text-slate-900 text-xs font-bold truncate">
-                            {r.patient_name || r.abha_id || r.session_id.slice(0, 14) + '...'}
-                          </p>
-                          <p className="text-slate-400 text-[11px] truncate mt-0.5">
-                            {r.gender ? `${r.gender === 'M' ? 'Male' : 'Female'}${r.age ? `, ${r.age}y` : ''} · ` : ''}{r.abha_id ? `${r.abha_id} · ` : ''}{formatClinicalTitle(r.intake_type)}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[10px] font-black bg-slate-900 text-teal-300 px-1.5 py-0.2 rounded">
+                              #{r.token_number || 'M-01'}
+                            </span>
+                            <p className="text-slate-900 text-xs font-bold truncate">
+                              {r.patient_name || r.abha_id || r.session_id.slice(0, 14) + '...'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                            {r.intake_channel === 'mobile_qr' || r.channel === 'mobile_qr' ? (
+                              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5">
+                                <Smartphone className="w-2.5 h-2.5" /> Mobile QR
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5">
+                                <Monitor className="w-2.5 h-2.5" /> Kiosk
+                              </span>
+                            )}
+                            <span className="text-slate-400 truncate">
+                              {r.gender ? `${r.gender === 'M' ? 'M' : 'F'}${r.age ? `, ${r.age}y` : ''} · ` : ''}{formatClinicalTitle(r.intake_type)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
@@ -643,14 +691,38 @@ const PhysicianDashboard = () => {
             <div className="max-w-4xl mx-auto space-y-4">
               {/* Report header card */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                
+                {/* Audio Broadcast Notice */}
+                {calledMessage && (
+                  <div className="mb-4 bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between shadow-2xs animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="w-4 h-4 text-emerald-600 shrink-0 animate-bounce" />
+                      <span>📢 {calledMessage} (Broadcasted to Waiting Hall)</span>
+                    </div>
+                    <button onClick={() => setCalledMessage('')} className="text-emerald-700 hover:text-emerald-900 text-xs cursor-pointer font-extrabold">✕</button>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-mono text-xs font-black bg-slate-900 text-teal-300 px-2 py-0.5 rounded-lg border border-slate-700">
+                        Token #{detail.token_number || 'M-01'}
+                      </span>
                       <User className="w-4 h-4 text-teal-600" />
                       <h2 className="text-slate-900 font-black text-lg">
                         {detail.patient_name || detail.patient_details?.name || detail.abha_id || 'Patient'}
                       </h2>
                       <UrgencyBadge urgency={detail.urgency} />
+                      {detail.channel === 'mobile_qr' || detail.intake_channel === 'mobile_qr' ? (
+                        <span className="inline-flex items-center gap-1 text-teal-800 text-xs font-bold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                          <Smartphone className="w-3 h-3 text-teal-600" /> Mobile Scan & Sit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-slate-700 text-xs font-bold bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                          <Monitor className="w-3 h-3 text-slate-500" /> Physical Kiosk
+                        </span>
+                      )}
                       {detail.verified && (
                         <span className="inline-flex items-center gap-1 text-emerald-700 text-xs font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                           <CheckCircle2 className="w-3 h-3" />Verified
@@ -681,6 +753,21 @@ const PhysicianDashboard = () => {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {/* Call Next Patient Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleCallToken(detail.token_number, detail.patient_name)}
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
+                        callingToken === detail.token_number
+                          ? 'bg-emerald-600 text-white animate-pulse'
+                          : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-200'
+                      }`}
+                      title="Call this patient into consultation chamber"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>{callingToken === detail.token_number ? 'Calling Patient…' : 'Call Token'}</span>
+                    </button>
+
                     <button onClick={() => setShowAbhaModal(true)}
                       className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 rounded-xl text-xs font-bold transition shadow-xs"
                       title="View Government of India ABHA Health Card">

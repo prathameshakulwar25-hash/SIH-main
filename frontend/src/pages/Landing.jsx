@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalState } from '../context/GlobalStateContext';
 import {
   Globe, HeartPulse, Stethoscope, ArrowRight, Lock, ShieldCheck,
   Eye, EyeOff, Activity, Sparkles, Smartphone, Mail, CreditCard,
-  ArrowLeft, RotateCcw, CheckCircle2, Loader2, Shield, QrCode, User, Server
+  ArrowLeft, RotateCcw, CheckCircle2, Loader2, Shield, QrCode, User, Server, Users
 } from 'lucide-react';
 import { JeevanBrand } from '../components/JeevanLogo';
 import { API_BASE, getApiBase } from '../config/api';
 import ServerConfigModal from '../components/ServerConfigModal';
+import KioskScanAndSitModal from '../components/KioskScanAndSitModal';
 
 const PHYSICIAN_PIN = '1234';
 
@@ -157,12 +158,15 @@ const SAMPLE_DEMO_ABHAS = [
 
 const Landing = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isMobileQr = searchParams.get('channel') === 'mobile_qr' || searchParams.get('mode') === 'mobile';
   const { globalState, updateState, resetState } = useGlobalState();
   const lang = globalState?.language || 'en';
   const t = T[lang] || T.en;
 
   // Primary Tab: 'patient' | 'physician'
   const [activeTab, setActiveTab] = useState('patient');
+  const [showKioskModal, setShowKioskModal] = useState(false);
   
   // Patient Login Method: 'mobile' | 'abha' | 'email'
   const [patientMethod, setPatientMethod] = useState('mobile');
@@ -323,12 +327,17 @@ const Landing = () => {
         body: JSON.stringify({
           name: patientName.trim(),
           mobile: cleanMobile,
-          otp: cleanOtp
+          otp: cleanOtp,
+          channel: isMobileQr ? 'mobile_qr' : 'kiosk'
         })
       });
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
+        const tokenNum = data.token_number || (isMobileQr ? 'M-01' : 'K-01');
+        const channelUsed = data.channel || (isMobileQr ? 'mobile_qr' : 'kiosk');
         sessionStorage.setItem('session_id', data.session_id);
+        sessionStorage.setItem('token_number', tokenNum);
+        sessionStorage.setItem('intake_channel', channelUsed);
         updateState({
           role: 'patient',
           patientName: data.patient_name || patientName.trim(),
@@ -337,6 +346,8 @@ const Landing = () => {
           mobile: cleanMobile,
           consent_granted: false,
           language: lang,
+          token_number: tokenNum,
+          intake_channel: channelUsed
         });
         navigate('/patient-home');
       } else {
@@ -345,7 +356,11 @@ const Landing = () => {
     } catch {
       if (cleanOtp === '123456' || cleanOtp === demoOtp) {
         const fallbackSid = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const tokenNum = isMobileQr ? 'M-01' : 'K-01';
+        const channelUsed = isMobileQr ? 'mobile_qr' : 'kiosk';
         sessionStorage.setItem('session_id', fallbackSid);
+        sessionStorage.setItem('token_number', tokenNum);
+        sessionStorage.setItem('intake_channel', channelUsed);
         updateState({
           role: 'patient',
           patientName: patientName.trim(),
@@ -354,6 +369,8 @@ const Landing = () => {
           mobile: cleanMobile,
           consent_granted: false,
           language: lang,
+          token_number: tokenNum,
+          intake_channel: channelUsed
         });
         navigate('/patient-home');
       } else {
@@ -417,12 +434,17 @@ const Landing = () => {
         body: JSON.stringify({
           name: patientName.trim(),
           email,
-          otp: cleanOtp
+          otp: cleanOtp,
+          channel: isMobileQr ? 'mobile_qr' : 'kiosk'
         })
       });
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
+        const tokenNum = data.token_number || (isMobileQr ? 'M-01' : 'K-01');
+        const channelUsed = data.channel || (isMobileQr ? 'mobile_qr' : 'kiosk');
         sessionStorage.setItem('session_id', data.session_id);
+        sessionStorage.setItem('token_number', tokenNum);
+        sessionStorage.setItem('intake_channel', channelUsed);
         updateState({
           role: 'patient',
           patientName: data.patient_name || patientName.trim(),
@@ -431,6 +453,8 @@ const Landing = () => {
           abha_id: data.abha_id,
           consent_granted: false,
           language: lang,
+          token_number: tokenNum,
+          intake_channel: channelUsed
         });
         navigate('/patient-home');
       } else {
@@ -439,7 +463,11 @@ const Landing = () => {
     } catch {
       if (cleanOtp === '123456' || cleanOtp === demoOtp) {
         const fallbackSid = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const tokenNum = isMobileQr ? 'M-01' : 'K-01';
+        const channelUsed = isMobileQr ? 'mobile_qr' : 'kiosk';
         sessionStorage.setItem('session_id', fallbackSid);
+        sessionStorage.setItem('token_number', tokenNum);
+        sessionStorage.setItem('intake_channel', channelUsed);
         updateState({
           role: 'patient',
           patientName: patientName.trim(),
@@ -448,6 +476,8 @@ const Landing = () => {
           abha_id: `ABHA-${Date.now()}`,
           consent_granted: false,
           language: lang,
+          token_number: tokenNum,
+          intake_channel: channelUsed
         });
         navigate('/patient-home');
       } else {
@@ -474,13 +504,18 @@ const Landing = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: patientName.trim() || undefined,
-          abha_id: abha
+          abha_id: abha,
+          channel: isMobileQr ? 'mobile_qr' : 'kiosk'
         })
       });
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
         const prof = data.profile || fetchedProfile;
+        const tokenNum = data.token_number || (isMobileQr ? 'M-01' : 'K-01');
+        const channelUsed = data.channel || (isMobileQr ? 'mobile_qr' : 'kiosk');
         sessionStorage.setItem('session_id', data.session_id);
+        sessionStorage.setItem('token_number', tokenNum);
+        sessionStorage.setItem('intake_channel', channelUsed);
         updateState({
           role: 'patient',
           patientName: data.patient_name || prof?.name || patientName.trim(),
@@ -499,6 +534,8 @@ const Landing = () => {
           },
           consent_granted: false,
           language: lang,
+          token_number: tokenNum,
+          intake_channel: channelUsed
         });
         navigate('/patient-home');
       } else {
@@ -678,6 +715,18 @@ const Landing = () => {
       <header className="relative z-10 max-w-5xl mx-auto w-full px-4 sm:px-6 pt-5 flex items-center justify-between">
         <JeevanBrand size="md" subtitleText={t.subBrand} />
         <div className="flex items-center gap-2">
+          {/* Scan & Sit QR Modal Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowKioskModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-sm transition hover:shadow-teal-200/50 cursor-pointer"
+            title="Scan & Sit QR Mode / Kiosk Bypass"
+          >
+            <QrCode className="w-3.5 h-3.5 text-teal-200" />
+            <span className="hidden sm:inline">Scan & Sit (QR Kiosk)</span>
+            <span className="sm:hidden">QR Kiosk</span>
+          </button>
+
           <div className="flex items-center bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl shadow-xs border border-slate-200 hover:border-teal-300 transition">
             <Globe className="w-4 h-4 text-teal-600 mr-2 shrink-0" />
             <select
@@ -703,6 +752,48 @@ const Landing = () => {
       <main className="relative z-10 max-w-xl mx-auto w-full px-4 sm:px-6 py-6 md:py-10 flex flex-col items-center text-center my-auto">
         {/* Master Login Card */}
         <div className="w-full max-w-md">
+
+          {/* "Scan & Sit" Waiting Hall QR Banner */}
+          <div className="w-full mb-3">
+            <div className="bg-gradient-to-r from-teal-800 via-teal-700 to-slate-900 rounded-2xl p-3.5 text-white shadow-lg border border-teal-600/30 flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur border border-white/20 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5 text-teal-200 animate-pulse" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded font-mono">
+                      Queue-Buster
+                    </span>
+                    <span className="text-xs font-bold text-white truncate">कतार में खड़े मत रहें!</span>
+                  </div>
+                  <p className="text-[11px] text-teal-100/90 truncate mt-0.5">
+                    Scan QR & complete intake on your phone while seated.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKioskModal(true)}
+                className="px-3 py-1.5 bg-white hover:bg-teal-50 text-teal-900 font-extrabold text-xs rounded-xl shadow-xs shrink-0 transition active:scale-95 cursor-pointer flex items-center gap-1"
+              >
+                <span>View QR</span>
+                <ArrowRight className="w-3 h-3 text-teal-700" />
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile QR Mode Indicator */}
+          {isMobileQr && (
+            <div className="mb-3 px-3 py-2 bg-teal-50 border border-teal-300 text-teal-900 text-xs font-bold rounded-xl flex items-center justify-between animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Mobile Scan & Sit Mode Active (BYOD Intake)</span>
+              </div>
+              <span className="text-[10px] bg-teal-200 text-teal-950 px-2 py-0.5 rounded-full font-mono">OPD Queue</span>
+            </div>
+          )}
+
           {/* Main Role Switcher: Patient vs Doctor */}
           <div className="flex bg-slate-200/70 p-1 rounded-2xl mb-3 shadow-inner">
             <button
@@ -1405,6 +1496,12 @@ const Landing = () => {
       <ServerConfigModal
         isOpen={showServerModal}
         onClose={() => setShowServerModal(false)}
+      />
+
+      {/* Kiosk Scan & Sit QR Modal */}
+      <KioskScanAndSitModal
+        isOpen={showKioskModal}
+        onClose={() => setShowKioskModal(false)}
       />
     </div>
   );
