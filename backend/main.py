@@ -8,7 +8,7 @@ load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Form, APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, JSON
+from sqlalchemy import create_engine, Column, Integer, String, JSON, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 import json
@@ -214,25 +214,39 @@ def detect_step_meta_from_reply(reply: str, user_msg_count: int) -> Optional[Dic
     return {"step_id": s["id"], "ui_type": s.get("ui_type"), "options": s.get("options")}
 
 
-# Database setup
+# Database setup with resilient fallback
 raw_db_url = os.getenv("DATABASE_URL", "").strip()
+engine = None
 
 if raw_db_url:
-    # Modern SQLAlchemy 1.4+ expects postgresql:// instead of postgres:// (common in Supabase/Render/Heroku)
-    if raw_db_url.startswith("postgres://"):
-        raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
-    DATABASE_URL = raw_db_url
-    # Production connection pooling for PostgreSQL
-    engine = create_engine(
-        DATABASE_URL,
-        pool_size=10,
-        max_overflow=20,
-        pool_recycle=300,
-        pool_pre_ping=True
-    )
-    db_masked = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "configured"
-    print(f"[Database] Connected to production database at: {db_masked}")
-else:
+    try:
+        # Modern SQLAlchemy 1.4+ expects postgresql:// instead of postgres://
+        if raw_db_url.startswith("postgres://"):
+            raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+        DATABASE_URL = raw_db_url
+        
+        connect_args = {"connect_timeout": 10}
+        if "sslmode" not in DATABASE_URL and "supabase" in DATABASE_URL:
+            connect_args["sslmode"] = "require"
+
+        engine = create_engine(
+            DATABASE_URL,
+            pool_size=5,
+            max_overflow=10,
+            pool_recycle=300,
+            pool_pre_ping=False,
+            connect_args=connect_args
+        )
+        # Test connection with a quick query
+        with engine.connect() as test_conn:
+            test_conn.execute(text("SELECT 1"))
+        db_masked = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "configured"
+        print(f"[Database] Connected to production database at: {db_masked}")
+    except Exception as db_err:
+        print(f"[Database Warning] Production DB connection failed ({db_err}). Falling back to local SQLite.")
+        engine = None
+
+if engine is None:
     DB_DIR = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(DB_DIR, exist_ok=True)
     DB_PATH = os.path.join(DB_DIR, "ayush.db")
@@ -299,12 +313,14 @@ class Document(Base):
     parsed_data = Column(JSON)
     timestamp = Column(String, default=lambda: datetime.utcnow().isoformat())
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[Database Warning] Base.metadata.create_all failed: {e}")
 
 # Safe database-agnostic schema migration for added columns on existing databases
-from sqlalchemy import inspect, text
-with engine.connect() as conn:
-    try:
+try:
+    with engine.connect() as conn:
         inspector = inspect(engine)
         if inspector.has_table("consents"):
             columns = [col["name"] for col in inspector.get_columns("consents")]
@@ -332,8 +348,8 @@ with engine.connect() as conn:
             if "red_flags" not in pr_cols and pr_cols:
                 conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN red_flags JSON"))
         conn.commit()
-    except Exception as e:
-        print(f"Notice: Schema migration check: {e}")
+except Exception as e:
+    print(f"Notice: Schema migration check: {e}")
 
 app = FastAPI(title="AYUSH Assessment API")
 

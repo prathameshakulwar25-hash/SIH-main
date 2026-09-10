@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+python-dotenv
+httpx
+python-multipart
+fhir.resources
+openai
+psycopg2-binary
