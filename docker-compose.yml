@@ -1,0 +1,55 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jeevan-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-production_super_secret_jwt_key_change_me}
+      - JWT_EXPIRY_MINUTES=480
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      - FHIR_SERVER_URL=${FHIR_SERVER_URL:-https://hapi.fhir.org/baseR4}
+      - ABDM_BASE_URL=${ABDM_BASE_URL:-https://dev.abdm.gov.in/gateway}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://jeevan:jeevan@postgres:5432/jeevan}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jeevan-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: jeevan-postgres
+    environment:
+      POSTGRES_DB: jeevan
+      POSTGRES_USER: jeevan
+      POSTGRES_PASSWORD: jeevan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jeevan -d jeevan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

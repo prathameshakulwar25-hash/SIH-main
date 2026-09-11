@@ -294,7 +294,7 @@ const Landing = () => {
       const data = await res.json();
       if (res.ok && data.status === 'otp_sent') {
         setOtpStep(true);
-        setDemoOtp(data.demo_otp || '123456');
+        setDemoOtp(data.dev_otp || data.demo_otp || '');
         setResendTimer(30);
         setSuccessMsg(data.message || t.otpSentMobile(cleanMobile));
       } else {
@@ -338,8 +338,12 @@ const Landing = () => {
         sessionStorage.setItem('session_id', data.session_id);
         sessionStorage.setItem('token_number', tokenNum);
         sessionStorage.setItem('intake_channel', channelUsed);
+        if (data.access_token) {
+          sessionStorage.setItem('auth_token', data.access_token);
+        }
         updateState({
           role: 'patient',
+          token: data.access_token,
           patientName: data.patient_name || patientName.trim(),
           session_id: data.session_id,
           abha_id: data.abha_id,
@@ -354,28 +358,7 @@ const Landing = () => {
         setError(data.detail || 'Invalid OTP code.');
       }
     } catch {
-      if (cleanOtp === '123456' || cleanOtp === demoOtp) {
-        const fallbackSid = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const tokenNum = isMobileQr ? 'M-01' : 'K-01';
-        const channelUsed = isMobileQr ? 'mobile_qr' : 'kiosk';
-        sessionStorage.setItem('session_id', fallbackSid);
-        sessionStorage.setItem('token_number', tokenNum);
-        sessionStorage.setItem('intake_channel', channelUsed);
-        updateState({
-          role: 'patient',
-          patientName: patientName.trim(),
-          session_id: fallbackSid,
-          abha_id: `ABHA-${Date.now()}`,
-          mobile: cleanMobile,
-          consent_granted: false,
-          language: lang,
-          token_number: tokenNum,
-          intake_channel: channelUsed
-        });
-        navigate('/patient-home');
-      } else {
-        setError('Verification failed. Use demo code 123456.');
-      }
+      setError('Network connection error. Please verify backend server is reachable.');
     } finally {
       setLoading(false);
     }
@@ -401,7 +384,7 @@ const Landing = () => {
       const data = await res.json();
       if (res.ok && data.status === 'otp_sent') {
         setOtpStep(true);
-        setDemoOtp(data.demo_otp || '123456');
+        setDemoOtp(data.dev_otp || data.demo_otp || '');
         setResendTimer(30);
         setSuccessMsg(data.message || t.otpSentEmail(email));
       } else {
@@ -445,8 +428,12 @@ const Landing = () => {
         sessionStorage.setItem('session_id', data.session_id);
         sessionStorage.setItem('token_number', tokenNum);
         sessionStorage.setItem('intake_channel', channelUsed);
+        if (data.access_token) {
+          sessionStorage.setItem('auth_token', data.access_token);
+        }
         updateState({
           role: 'patient',
+          token: data.access_token,
           patientName: data.patient_name || patientName.trim(),
           session_id: data.session_id,
           email,
@@ -461,28 +448,7 @@ const Landing = () => {
         setError(data.detail || 'Invalid verification code.');
       }
     } catch {
-      if (cleanOtp === '123456' || cleanOtp === demoOtp) {
-        const fallbackSid = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const tokenNum = isMobileQr ? 'M-01' : 'K-01';
-        const channelUsed = isMobileQr ? 'mobile_qr' : 'kiosk';
-        sessionStorage.setItem('session_id', fallbackSid);
-        sessionStorage.setItem('token_number', tokenNum);
-        sessionStorage.setItem('intake_channel', channelUsed);
-        updateState({
-          role: 'patient',
-          patientName: patientName.trim(),
-          session_id: fallbackSid,
-          email,
-          abha_id: `ABHA-${Date.now()}`,
-          consent_granted: false,
-          language: lang,
-          token_number: tokenNum,
-          intake_channel: channelUsed
-        });
-        navigate('/patient-home');
-      } else {
-        setError('Verification failed. Use demo code 123456.');
-      }
+      setError('Network connection error during email verification.');
     } finally {
       setLoading(false);
     }
@@ -516,8 +482,12 @@ const Landing = () => {
         sessionStorage.setItem('session_id', data.session_id);
         sessionStorage.setItem('token_number', tokenNum);
         sessionStorage.setItem('intake_channel', channelUsed);
+        if (data.access_token) {
+          sessionStorage.setItem('auth_token', data.access_token);
+        }
         updateState({
           role: 'patient',
+          token: data.access_token,
           patientName: data.patient_name || prof?.name || patientName.trim(),
           session_id: data.session_id,
           abha_id: data.abha_id,
@@ -542,29 +512,7 @@ const Landing = () => {
         setError(data.detail || 'Could not verify ABHA ID.');
       }
     } catch {
-      const prof = fetchedProfile;
-      const fallbackSid = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      sessionStorage.setItem('session_id', fallbackSid);
-      updateState({
-        role: 'patient',
-        patientName: patientName.trim() || prof?.name || 'Ayushman Patient',
-        session_id: fallbackSid,
-        abha_id: abha,
-        abha_address: prof?.abha_address || (abha.includes('@') ? abha : `${abha}@abdm`),
-        mobile: prof?.mobile || patientMobile || '',
-        email: prof?.email || patientEmail || '',
-        gender: prof?.gender || 'M',
-        dob: prof?.dob || null,
-        age: prof?.year_of_birth || null,
-        abha_profile: prof,
-        patient_contact: {
-          phone: prof?.mobile || patientMobile || '',
-          email: prof?.email || patientEmail || ''
-        },
-        consent_granted: false,
-        language: lang,
-      });
-      navigate('/patient-home');
+      setError('Network error while validating ABHA identity.');
     } finally {
       setLoading(false);
     }
@@ -594,17 +542,14 @@ const Landing = () => {
       const data = await res.json();
       if (res.ok && data.status === 'otp_sent') {
         setDoctorOtpStep(true);
-        setDoctorDemoOtp(data.demo_otp || '123456');
+        setDoctorDemoOtp(data.dev_otp || data.demo_otp || '');
         setDoctorTimer(30);
         setSuccessMsg(data.message || '2FA code sent to registered mobile.');
       } else {
         setError(data.detail || 'Failed to send 2FA code.');
       }
     } catch {
-      setDoctorOtpStep(true);
-      setDoctorDemoOtp('123456');
-      setDoctorTimer(30);
-      setSuccessMsg('Simulated 2FA code generated for doctor login.');
+      setError('Could not connect to authentication gateway.');
     } finally {
       setLoading(false);
     }
@@ -629,8 +574,12 @@ const Landing = () => {
       });
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
+        if (data.access_token) {
+          sessionStorage.setItem('auth_token', data.access_token);
+        }
         updateState({
           role: 'physician',
+          token: data.access_token,
           physician_id: data.physician_id || 'physician-1',
           physician_name: data.name || 'Dr. Sharma',
           language: lang
@@ -640,12 +589,7 @@ const Landing = () => {
         setError(data.detail || 'Invalid verification code.');
       }
     } catch {
-      if (cleanOtp === '123456' || cleanOtp === doctorDemoOtp) {
-        updateState({ role: 'physician', language: lang });
-        navigate('/physician-dashboard');
-      } else {
-        setError('Verification failed. Use demo code 123456.');
-      }
+      setError('Verification failed. Network or server error.');
     } finally {
       setLoading(false);
     }
@@ -970,28 +914,30 @@ const Landing = () => {
                       </div>
 
                       {/* Generated Code Display Card */}
-                      <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 text-emerald-900">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />Security Code:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setOtpCode(demoOtp || '123456')}
-                            className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
-                          >
-                            Auto-Fill
-                          </button>
+                      {demoOtp && (
+                        <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 text-emerald-900">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />Login Code (Local / Dev):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setOtpCode(demoOtp)}
+                              className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
+                            >
+                              Auto-Fill
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-lg font-black tracking-widest text-emerald-950">
+                              {demoOtp}
+                            </span>
+                            <span className="text-[10px] text-emerald-700">
+                              Logged to server terminal
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-lg font-black tracking-widest text-emerald-950">
-                            {demoOtp || '123456'}
-                          </span>
-                          <span className="text-[10px] text-emerald-700">
-                            Demo fallback: <strong>123456</strong>
-                          </span>
-                        </div>
-                      </div>
+                      )}
 
                       <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
@@ -1238,28 +1184,30 @@ const Landing = () => {
                       </div>
 
                       {/* Generated Code Display Card */}
-                      <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 text-emerald-900">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />Email Security Code:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setOtpCode(demoOtp || '123456')}
-                            className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
-                          >
-                            Auto-Fill
-                          </button>
+                      {demoOtp && (
+                        <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 text-emerald-900">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />Email Login Code (Local / Dev):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setOtpCode(demoOtp)}
+                              className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
+                            >
+                              Auto-Fill
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-lg font-black tracking-widest text-emerald-950">
+                              {demoOtp}
+                            </span>
+                            <span className="text-[10px] text-emerald-700">
+                              Logged to server terminal
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-lg font-black tracking-widest text-emerald-950">
-                            {demoOtp || '123456'}
-                          </span>
-                          <span className="text-[10px] text-emerald-700">
-                            Demo code: <strong>123456</strong>
-                          </span>
-                        </div>
-                      </div>
+                      )}
 
                       <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
@@ -1408,28 +1356,30 @@ const Landing = () => {
                   </div>
 
                   {/* Doctor Code Display Box */}
-                  <div className="bg-teal-50/90 border border-teal-200 rounded-xl p-3 text-teal-900">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />Doctor 2FA Code:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setDoctorOtpCode(doctorDemoOtp || '123456')}
-                        className="text-[11px] font-extrabold bg-teal-600 hover:bg-teal-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
-                      >
-                        Auto-Fill
-                      </button>
+                  {doctorDemoOtp && (
+                    <div className="bg-teal-50/90 border border-teal-200 rounded-xl p-3 text-teal-900">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-teal-600" />Doctor 2FA Code (Local / Dev):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDoctorOtpCode(doctorDemoOtp)}
+                          className="text-[11px] font-extrabold bg-teal-600 hover:bg-teal-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs transition cursor-pointer"
+                        >
+                          Auto-Fill
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-lg font-black tracking-widest text-teal-950">
+                          {doctorDemoOtp}
+                        </span>
+                        <span className="text-[10px] text-teal-700">
+                          PIN: <strong>1234</strong> • Code logged to server
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-lg font-black tracking-widest text-teal-950">
-                        {doctorDemoOtp || '123456'}
-                      </span>
-                      <span className="text-[10px] text-teal-700">
-                        Master code: <strong>123456</strong>
-                      </span>
-                    </div>
-                  </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">

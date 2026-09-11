@@ -28,6 +28,66 @@ RED_FLAG_KEYWORDS: List[str] = [kw.lower() for kw in FLOW.get("red_flags", [])]
 
 # In-memory session state: session_id -> state dict
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
+_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "ayush.db")
+
+
+def _init_flow_db():
+    try:
+        import sqlite3
+        os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS flow_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    state_json TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+    except Exception:
+        pass
+
+
+_init_flow_db()
+
+
+def _save_session_state(session_id: str, state: Dict[str, Any]):
+    try:
+        import sqlite3
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO flow_sessions (session_id, state_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (session_id, json.dumps(state))
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _load_session_state(session_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        import sqlite3
+        if not os.path.exists(_DB_PATH):
+            return None
+        with sqlite3.connect(_DB_PATH) as conn:
+            row = conn.execute("SELECT state_json FROM flow_sessions WHERE session_id = ?", (session_id,)).fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+    except Exception:
+        pass
+    return None
+
+
+def _delete_session_state(session_id: str):
+    try:
+        import sqlite3
+        if not os.path.exists(_DB_PATH):
+            return
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.execute("DELETE FROM flow_sessions WHERE session_id = ?", (session_id,))
+            conn.commit()
+    except Exception:
+        pass
 
 
 def _normalize(text: str) -> str:
@@ -42,15 +102,21 @@ def detect_red_flags(patient_text: str) -> List[str]:
 
 def get_or_create_session(session_id: str, language: str = "en") -> Dict[str, Any]:
     if session_id not in _SESSIONS:
-        _SESSIONS[session_id] = {
-            "step_index": 0,          # which flow step we're currently on
-            "language": language,
-            "collected": {},          # field -> patient answer
-            "red_flags_found": [],
-            "complete": False,
-        }
+        loaded = _load_session_state(session_id)
+        if loaded:
+            _SESSIONS[session_id] = loaded
+        else:
+            _SESSIONS[session_id] = {
+                "step_index": 0,          # which flow step we're currently on
+                "language": language,
+                "collected": {},          # field -> patient answer
+                "red_flags_found": [],
+                "complete": False,
+            }
+            _save_session_state(session_id, _SESSIONS[session_id])
     # Always update language in case patient changed it
     _SESSIONS[session_id]["language"] = language
+    _save_session_state(session_id, _SESSIONS[session_id])
     return _SESSIONS[session_id]
 
 
@@ -72,6 +138,8 @@ def get_step_meta(session_id: str) -> Optional[Dict[str, Any]]:
     Returns None if the session is complete or beyond the last step.
     """
     state = _SESSIONS.get(session_id)
+    if not state:
+        state = _load_session_state(session_id)
     if not state:
         return None
     idx = state.get("step_index", 0)
@@ -128,6 +196,7 @@ def advance_step(session_id: str, patient_answer: str, language: str = "en") -> 
     # Check if flow is complete
     if next_idx >= len(FLOW_STEPS):
         state["complete"] = True
+        _save_session_state(session_id, state)
         return {
             "next_question": None,
             "red_flags": state["red_flags_found"],
@@ -141,6 +210,7 @@ def advance_step(session_id: str, patient_answer: str, language: str = "en") -> 
     key = f"text_{language}"
     next_question = next_step.get(key) or next_step.get("text_en", "")
 
+    _save_session_state(session_id, state)
     return {
         "next_question": next_question,
         "red_flags": state["red_flags_found"],
@@ -152,7 +222,9 @@ def advance_step(session_id: str, patient_answer: str, language: str = "en") -> 
 
 def get_session_summary(session_id: str) -> Dict[str, Any]:
     """Return all collected data for a session (used for report generation)."""
-    state = _SESSIONS.get(session_id, {})
+    state = _SESSIONS.get(session_id)
+    if not state:
+        state = _load_session_state(session_id) or {}
     return {
         "collected": state.get("collected", {}),
         "red_flags": state.get("red_flags_found", []),
@@ -165,6 +237,7 @@ def reset_session(session_id: str):
     """Clear session state (e.g., for a new intake)."""
     if session_id in _SESSIONS:
         del _SESSIONS[session_id]
+    _delete_session_state(session_id)
 
 
 def build_summary_prompt(session_id: str) -> str:

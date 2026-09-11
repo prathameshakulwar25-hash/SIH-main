@@ -1,11 +1,15 @@
-fastapi
-uvicorn
-sqlalchemy
-pydantic
-python-dotenv
-httpx
-python-multipart
-fhir.resources
-openai
-psycopg2-binary
-
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+sqlalchemy>=2.0.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+python-multipart>=0.0.9
+fhir.resources>=8.0.0
+openai>=1.14.0
+psycopg2-binary>=2.9.9
+pyjwt>=2.8.0
+pypdf>=4.1.0
+pillow>=10.2.0
+pytesseract>=0.3.10
+winocr>=0.0.15; sys_platform == 'win32'

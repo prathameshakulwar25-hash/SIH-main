@@ -6,7 +6,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 
 logger = logging.getLogger("report_notifier")
@@ -54,7 +54,7 @@ def format_phone_e164(phone: str) -> str:
 def generate_clinical_html_report(data: Dict[str, Any]) -> str:
     patient_details = data.get("patient_details") or data.get("patient") or {}
     abha_id = data.get("abha_id") or patient_details.get("abha_id") or "Not provided"
-    created_at = data.get("created_at") or datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    created_at = data.get("created_at") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     locked = data.get("locked", False)
     
     patient_name = data.get("patient_name") or patient_details.get("name") or "Ayushman Patient"

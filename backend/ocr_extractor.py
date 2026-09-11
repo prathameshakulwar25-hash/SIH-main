@@ -4,9 +4,35 @@ import io
 import json
 import logging
 import asyncio
+import sys
 from typing import Tuple, Dict, Any, List, Optional
 
 logger = logging.getLogger("ocr_extractor")
+
+async def _ocr_image(pil_img) -> str:
+    """
+    Cross-platform OCR helper:
+    1. On Windows: uses Windows Media OCR (winocr) if available.
+    2. On Linux/Docker or fallback: uses pytesseract.
+    """
+    if sys.platform == "win32":
+        try:
+            import winocr
+            res = await winocr.recognize_pil(pil_img, 'en')
+            if res and hasattr(res, 'text') and res.text.strip():
+                return res.text.strip()
+        except Exception as e:
+            logger.debug(f"winocr recognition skipped/failed: {e}")
+
+    try:
+        import pytesseract
+        text = pytesseract.image_to_string(pil_img).strip()
+        if text:
+            return text
+    except Exception as e:
+        logger.debug(f"pytesseract recognition skipped/failed: {e}")
+
+    return ""
 
 # Reference ranges for common diagnostic lab tests
 REFERENCE_RANGES = {
@@ -80,7 +106,6 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
             # If PDF is scanned (no text stream), extract embedded images and OCR them
             logger.info("PDF has minimal text stream; attempting OCR on embedded page images.")
             scanned_ocr_parts = []
-            import winocr
             from PIL import Image
             for page in reader.pages:
                 for img_obj in page.images:
@@ -88,9 +113,9 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
                         pil_img = Image.open(io.BytesIO(img_obj.data))
                         if pil_img.mode != 'RGB':
                             pil_img = pil_img.convert('RGB')
-                        ocr_res = await winocr.recognize_pil(pil_img, 'en')
-                        if ocr_res and ocr_res.text.strip():
-                            scanned_ocr_parts.append(ocr_res.text.strip())
+                        ocr_txt = await _ocr_image(pil_img)
+                        if ocr_txt:
+                            scanned_ocr_parts.append(ocr_txt)
                     except Exception as img_ex:
                         logger.warning(f"Error OCRing embedded PDF image: {img_ex}")
             if scanned_ocr_parts:
@@ -98,10 +123,9 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
         except Exception as pdf_ex:
             logger.warning(f"pypdf extraction error: {pdf_ex}")
 
-    # 2. Image Handler (Windows Media OCR / winocr)
+    # 2. Image Handler (Cross-platform: Windows Media OCR / Pytesseract)
     try:
         from PIL import Image, ImageEnhance
-        import winocr
         image = Image.open(io.BytesIO(content))
         if image.mode != 'RGB':
             image = image.convert('RGB')
@@ -114,24 +138,12 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
             enhancer = ImageEnhance.Contrast(image)
             image = enhancer.enhance(1.4)
         
-        ocr_result = await winocr.recognize_pil(image, 'en')
-        if ocr_result and ocr_result.text and ocr_result.text.strip():
-            logger.info(f"Windows OCR extracted {len(ocr_result.text)} characters.")
-            return ocr_result.text.strip()
-    except Exception as winocr_ex:
-        logger.warning(f"winocr recognition error: {winocr_ex}")
-
-    # 3. Pytesseract Fallback (if installed and on path)
-    try:
-        import pytesseract
-        from PIL import Image
-        image = Image.open(io.BytesIO(content))
-        tess_text = pytesseract.image_to_string(image).strip()
-        if tess_text:
-            logger.info(f"Pytesseract extracted {len(tess_text)} characters.")
-            return tess_text
-    except Exception:
-        pass
+        ocr_result = await _ocr_image(image)
+        if ocr_result:
+            logger.info(f"OCR extracted {len(ocr_result)} characters from image.")
+            return ocr_result
+    except Exception as img_ex:
+        logger.warning(f"Image OCR error: {img_ex}")
 
     # 4. Plain Text / Markdown Handler
     try:

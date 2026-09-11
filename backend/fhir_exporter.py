@@ -32,7 +32,7 @@ def generate_fhir_bundle(
         entry=[],
         meta=Meta(
             profile=["https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"],
-            lastUpdated=datetime.datetime.utcnow().isoformat() + "Z"
+            lastUpdated=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
     )
     

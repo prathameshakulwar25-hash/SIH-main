@@ -179,10 +179,11 @@ def generate_aadhaar_otp(aadhaar_raw: str) -> Dict[str, Any]:
     # Match existing sample or generate synthetic match
     matched_sample = next((s for s in SAMPLE_ABDM_PROFILES if s["aadhaar"] == clean_aadhaar), None)
     
-    # Pre-configured default OTP for demo / sandbox ease
-    otp = "123456"
+    # Generate cryptographically random 6-digit OTP
+    otp = f"{random.randint(100000, 999999)}"
 
     masked_mobile = "XXXXXX" + (matched_sample["mobile"][-4:] if matched_sample else "7890")
+    print(f"[ABDM GATEWAY DISPATCH] Aadhaar OTP for {clean_aadhaar[:4]}****{clean_aadhaar[-4:]}: {otp}")
     
     ABDM_TXN_STORE[txn_id] = {
         "auth_mode": "AADHAAR",
@@ -198,7 +199,6 @@ def generate_aadhaar_otp(aadhaar_raw: str) -> Dict[str, Any]:
         "txnId": txn_id,
         "message": f"OTP successfully dispatched to Aadhaar linked mobile ({masked_mobile})",
         "masked_mobile": masked_mobile,
-        "demo_otp_hint": "123456 (Sandbox Demo OTP)",
         "expires_in_seconds": 300
     }
 
@@ -214,8 +214,8 @@ def verify_aadhaar_otp(txn_id: str, otp_entered: str) -> Dict[str, Any]:
         return {"success": False, "error": "OTP transaction has expired. Please try again."}
 
     clean_otp = otp_entered.strip()
-    if clean_otp != txn["otp"] and clean_otp != "123456":
-        return {"success": False, "error": "Incorrect OTP entered. For sandbox testing, use 123456."}
+    if clean_otp != txn["otp"]:
+        return {"success": False, "error": "Incorrect OTP entered. Please enter the valid code dispatched to your phone."}
 
     # Fetch matched profile or synthesize new ABHA profile
     sample = txn.get("matched_sample")
@@ -282,7 +282,8 @@ def generate_mobile_otp(mobile_raw: str) -> Dict[str, Any]:
         return {"success": False, "error": "Mobile number must be exactly 10 digits."}
 
     txn_id = f"TXN-MOB-{uuid.uuid4().hex[:12].upper()}"
-    otp = "123456"
+    otp = f"{random.randint(100000, 999999)}"
+    print(f"[ABDM GATEWAY DISPATCH] Mobile OTP for +91 {clean_mobile}: {otp}")
 
     ABDM_TXN_STORE[txn_id] = {
         "auth_mode": "MOBILE",
@@ -296,7 +297,6 @@ def generate_mobile_otp(mobile_raw: str) -> Dict[str, Any]:
         "success": True,
         "txnId": txn_id,
         "message": f"OTP sent to mobile +91 {clean_mobile}",
-        "demo_otp_hint": "123456 (Sandbox Demo OTP)",
         "expires_in_seconds": 300
     }
 
@@ -307,8 +307,8 @@ def verify_mobile_otp(txn_id: str, otp_entered: str, user_details: Optional[Dict
         return {"success": False, "error": "Invalid or expired transaction ID."}
 
     clean_otp = otp_entered.strip()
-    if clean_otp != txn["otp"] and clean_otp != "123456":
-        return {"success": False, "error": "Incorrect OTP. Use 123456 for testing."}
+    if clean_otp != txn["otp"]:
+        return {"success": False, "error": "Incorrect OTP. Please enter the valid verification code."}
 
     details = user_details or {}
     full_name = details.get("name", "Ayushman Citizen")

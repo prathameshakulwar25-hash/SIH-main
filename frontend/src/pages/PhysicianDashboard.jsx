@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import AbhaCard from '../components/AbhaCard';
 import { JeevanLogoIcon } from '../components/JeevanLogo';
-import { API_BASE } from '../config/api';
+import { API_BASE, apiFetch } from '../config/api';
 
 const URGENCY_CFG = {
   emergency: { badge: 'bg-red-100 border-red-300 text-red-700', row: 'border-l-4 border-red-500', label: '🚨 Emergency', dot: 'bg-red-500' },
@@ -203,8 +203,12 @@ const PhysicianDashboard = () => {
   const { globalState, updateState } = useGlobalState();
 
   useEffect(() => {
-    if (!globalState?.role || globalState.role !== 'physician') navigate('/');
-  }, [globalState?.role, navigate]);
+    const token = sessionStorage.getItem('auth_token') || localStorage.getItem('auth_token') || globalState?.token;
+    const role = globalState?.role || localStorage.getItem('user_role');
+    if (role !== 'physician' || !token) {
+      navigate('/');
+    }
+  }, [globalState?.role, globalState?.token, navigate]);
 
   const [reports, setReports] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -256,7 +260,7 @@ const PhysicianDashboard = () => {
     } catch (_) {}
 
     try {
-      await fetch(`${API_BASE}/api/physician/queue/call`, {
+      await apiFetch('/api/physician/queue/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tNum, session_id: selectedId, room: 'Room 104' })
@@ -269,12 +273,16 @@ const PhysicianDashboard = () => {
   const fetchReports = useCallback(async () => {
     setLoadingList(true);
     try {
-      const res = await fetch(`${API_BASE}/api/physician/reports`);
+      const res = await apiFetch('/api/physician/reports');
+      if (res.status === 401 || res.status === 403) {
+        navigate('/');
+        return;
+      }
       const data = await res.json();
       setReports(data.reports || []);
     } catch { setError('Could not load reports. Is the backend running?'); }
     finally { setLoadingList(false); }
-  }, []);
+  }, [navigate]);
 
   const fetchDetail = useCallback(async (sessionId) => {
     setLoadingDetail(true);
@@ -284,7 +292,11 @@ const PhysicianDashboard = () => {
     setIsEditingReport(false);
     setReportSuccessMsg('');
     try {
-      const res = await fetch(`${API_BASE}/api/physician/reports/${sessionId}`);
+      const res = await apiFetch(`/api/physician/reports/${sessionId}`);
+      if (res.status === 401 || res.status === 403) {
+        navigate('/');
+        return;
+      }
       const data = await res.json();
       setDetail(data);
       setNotes(data.physician_notes || '');
@@ -296,7 +308,7 @@ const PhysicianDashboard = () => {
       setOriginalReportText(reportText);
     } catch { setError('Could not load report detail.'); }
     finally { setLoadingDetail(false); }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
   
@@ -330,7 +342,7 @@ const PhysicianDashboard = () => {
     };
     setReviewSteps(updatedSteps);
     try {
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -359,7 +371,7 @@ const PhysicianDashboard = () => {
     });
     setReviewSteps(updatedSteps);
     try {
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,7 +392,7 @@ const PhysicianDashboard = () => {
     if (!selectedId) return;
     setVerifying(true);
     try {
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/verify`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/verify`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ physician_id: 'physician-1', notes }),
       });
@@ -394,7 +406,7 @@ const PhysicianDashboard = () => {
     if (!selectedId) return;
     setSavingNotes(true);
     try {
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/notes`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/notes`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ physician_id: 'physician-1', notes }),
       });
@@ -441,7 +453,7 @@ const PhysicianDashboard = () => {
     setEditedReportText(updatedReport);
 
     try {
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/review-steps`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -449,7 +461,7 @@ const PhysicianDashboard = () => {
           review_steps: updatedSteps
         })
       });
-      await fetch(`${API_BASE}/api/physician/reports/${selectedId}/summary`, {
+      await apiFetch(`/api/physician/reports/${selectedId}/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -489,7 +501,7 @@ const PhysicianDashboard = () => {
     setSavingReport(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/physician/reports/${selectedId}/summary`, {
+      const res = await apiFetch(`/api/physician/reports/${selectedId}/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -572,7 +584,13 @@ const PhysicianDashboard = () => {
             className="p-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 transition" title="Refresh">
             <RefreshCw className={`w-4 h-4 ${loadingList ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={() => { updateState({ role: null }); navigate('/'); }}
+          <button onClick={() => {
+            sessionStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_role');
+            updateState({ role: null, token: null });
+            navigate('/');
+          }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 text-xs font-bold transition">
             <LogOut className="w-3.5 h-3.5" />Logout
           </button>
@@ -1046,7 +1064,7 @@ const PhysicianDashboard = () => {
                           <Edit3 className="w-3.5 h-3.5" />Edit Report
                         </button>
                         <button
-                          onClick={() => window.open(`/summary/${selectedId}?role=physician`, '_blank')}
+                          onClick={() => window.open(`/summary/${selectedId}`, '_blank')}
                           className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
                           title="Open full clinical report with section editing and locking controls"
                         >

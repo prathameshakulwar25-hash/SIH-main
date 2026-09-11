@@ -624,9 +624,9 @@ const ClinicalSummary = () => {
     navigate('/');
   };
 
-  // Physician authentication state: check GlobalState, URL query param ?role=physician, or sessionStorage
-  const roleFromQuery = searchParams.get('role');
-  const isPhysicianUser = (globalState?.role === 'physician') || (roleFromQuery === 'physician') || (sessionStorage.getItem('user_role') === 'physician');
+  // Physician authorization: strictly requires verified role and active signed JWT token
+  const authToken = sessionStorage.getItem('auth_token') || globalState?.token;
+  const isPhysicianUser = Boolean(globalState?.role === 'physician' && authToken);
 
   // Physician Review State initialized from globalState
   const [reviewState, setReviewState] = useState(() => {
