@@ -49,9 +49,24 @@ export const ServerConfigModal = ({ isOpen, onClose, onServerSaved }) => {
         });
       }
     } catch (err) {
+      const isRender = cleanUrl.includes('onrender.com');
+      const isLocalhost = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
+      const isRemoteBrowser = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+      let helpfulMsg = `Failed to connect: ${err.message}.`;
+      if (err.message === 'Failed to fetch') {
+        if (isRender) {
+          helpfulMsg = 'Connecting to Render cloud backend failed. Free-tier cloud servers sleep when idle and take 30–50s to wake up. Please wait 15–20 seconds and click "Test" again.';
+        } else if (isLocalhost && isRemoteBrowser) {
+          helpfulMsg = 'Cannot connect to localhost:8000 from a remote device. Click the "Use Render Cloud" button below to connect to the deployed backend.';
+        } else {
+          helpfulMsg = `Failed to connect: ${err.message}. Ensure your backend is running and CORS is allowed.`;
+        }
+      }
+
       setTestResult({
         success: false,
-        message: `Failed to connect: ${err.message}. Ensure your backend or localtunnel is running.`
+        message: helpfulMsg
       });
     } finally {
       setTesting(false);
@@ -66,9 +81,15 @@ export const ServerConfigModal = ({ isOpen, onClose, onServerSaved }) => {
   };
 
   const handleResetToDefault = () => {
-    const defaultEnv = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const defaultEnv = import.meta.env.VITE_API_BASE_URL || (isLocal ? 'http://localhost:8000' : 'https://sih-main-b6mx.onrender.com');
     setUrl(defaultEnv);
     setCustomApiBase('');
+    setTestResult(null);
+  };
+
+  const handleUsePreset = (presetUrl) => {
+    setUrl(presetUrl);
     setTestResult(null);
   };
 
@@ -122,9 +143,23 @@ export const ServerConfigModal = ({ isOpen, onClose, onServerSaved }) => {
                 <span>Test</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Paste your <strong>localtunnel URL</strong> (e.g. <code>https://xxx.loca.lt</code>) or your deployed <strong>Render URL</strong>.
-            </p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <span className="text-[10px] text-slate-400 font-medium">Presets:</span>
+              <button
+                type="button"
+                onClick={() => handleUsePreset('https://sih-main-b6mx.onrender.com')}
+                className="px-2 py-0.5 rounded-md bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[10px] font-semibold transition cursor-pointer"
+              >
+                Render Cloud (Production)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUsePreset('http://localhost:8000')}
+                className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-medium transition cursor-pointer"
+              >
+                Localhost:8000
+              </button>
+            </div>
           </div>
 
           {/* Test feedback */}
@@ -159,7 +194,7 @@ export const ServerConfigModal = ({ isOpen, onClose, onServerSaved }) => {
           )}
 
           <div className="pt-1 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Defaults to: <code>{import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}</code></span>
+            <span>Current Cloud Endpoint: <code>https://sih-main-b6mx.onrender.com</code></span>
             <button
               type="button"
               onClick={handleResetToDefault}

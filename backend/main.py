@@ -355,8 +355,9 @@ except Exception as e:
 
 app = FastAPI(title="Jeevan OPD Clinical Platform", version="2.0.0")
 
-# CORS setup with strict, environment-configurable allowed origins
-raw_frontend_url = os.environ.get("FRONTEND_URL", "").strip()
+# CORS setup with environment-configurable allowed origins and regex for cloud domains
+raw_frontend_env = os.environ.get("FRONTEND_URL", "").strip()
+raw_frontend_urls = [u.strip().rstrip("/") for u in raw_frontend_env.split(",") if u.strip()]
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -364,13 +365,14 @@ allowed_origins = [
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-]
-if raw_frontend_url:
-    allowed_origins.append(raw_frontend_url.rstrip("/"))
+    "https://jeevannn.netlify.app",
+    "https://jeevan-health.netlify.app",
+] + raw_frontend_urls
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?:\/\/([a-zA-Z0-9_-]+\.)*(netlify\.app|onrender\.com|localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
