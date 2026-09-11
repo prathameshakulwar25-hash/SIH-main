@@ -5,6 +5,8 @@ import { Mic, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle,
 import { useGlobalState } from '../context/GlobalStateContext';
 import { evaluateVoiceMatch } from '../utils/voiceMatcher';
 import { API_BASE } from '../config/api';
+import { playSpeech, stopSpeech } from '../utils/speech';
+
 
 // Module-level dictionary — available inside useEffect for auto-TTS
 const INTAKE_I18N = {
@@ -241,33 +243,15 @@ const Intake = () => {
 
   useEffect(() => {
     if (!loading && !isAlreadyComplete && !result && tree && currentNodeId && !isMuted) {
-      window.speechSynthesis.cancel();
       const currentNode = tree.nodes.find(n => n.id === currentNodeId);
       if (currentNode) {
          const _lang = globalState.language || 'en';
          const _translated = (_lang !== 'en' && INTAKE_I18N[currentNode.question_text]?.[_lang]) || currentNode.question_text;
-         const utterance = new SpeechSynthesisUtterance(_translated);
-         const lang = globalState.language || 'en';
-         let targetLang = lang === 'hi' ? 'hi-IN' : (lang === 'mr' ? 'mr-IN' : 'en-IN');
          setFallbackMsg("");
-
-         const voices = window.speechSynthesis.getVoices();
-         if (voices.length > 0) {
-           const hasTarget = voices.some(v => v.lang.startsWith(targetLang.slice(0, 2)));
-           if (!hasTarget) {
-             if (targetLang === 'mr-IN' && voices.some(v => v.lang.startsWith('hi'))) {
-               targetLang = 'hi-IN';
-               setFallbackMsg("Playing in Hindi voice (Marathi voice not available on this device)");
-             } else if (targetLang !== 'en-IN' && targetLang !== 'en-US') {
-               targetLang = 'en-US';
-               setFallbackMsg("Playing in default voice (Regional voice not available on this device)");
-             }
-           }
-         }
-
-         utterance.lang = targetLang;
-         utterance.onend = () => setFallbackMsg("");
-         window.speechSynthesis.speak(utterance);
+         playSpeech(_translated, {
+           lang: _lang,
+           onEnd: () => setFallbackMsg("")
+         });
       }
     }
     // Clear transcript and watchdog on new question
@@ -694,30 +678,13 @@ const Intake = () => {
             <div className="flex items-start gap-3">
               <button 
                 onClick={() => {
-                  window.speechSynthesis.cancel();
                   const lang = globalState.language || 'en';
                   const _tts = (lang !== 'en' && INTAKE_I18N[currentNode.question_text]?.[lang]) || currentNode.question_text;
-                  const u = new SpeechSynthesisUtterance(_tts);
-                  let targetLang = lang === 'hi' ? 'hi-IN' : (lang === 'mr' ? 'mr-IN' : 'en-IN');
                   setFallbackMsg("");
-
-                  const voices = window.speechSynthesis.getVoices();
-                  if (voices.length > 0) {
-                    const hasTarget = voices.some(v => v.lang.startsWith(targetLang.slice(0, 2)));
-                    if (!hasTarget) {
-                      if (targetLang === 'mr-IN' && voices.some(v => v.lang.startsWith('hi'))) {
-                        targetLang = 'hi-IN';
-                        setFallbackMsg("Playing in Hindi voice (Marathi voice not available on this device)");
-                      } else if (targetLang !== 'en-IN' && targetLang !== 'en-US') {
-                        targetLang = 'en-US';
-                        setFallbackMsg("Playing in default voice (Regional voice not available on this device)");
-                      }
-                    }
-                  }
-
-                  u.lang = targetLang;
-                  u.onend = () => setFallbackMsg("");
-                  window.speechSynthesis.speak(u);
+                  playSpeech(_tts, {
+                    lang,
+                    onEnd: () => setFallbackMsg("")
+                  });
                 }}
                 className="mt-1 p-2 bg-teal-50 text-teal-700 rounded-full hover:bg-teal-100 transition shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center border border-teal-200"
                 aria-label="Read question aloud"

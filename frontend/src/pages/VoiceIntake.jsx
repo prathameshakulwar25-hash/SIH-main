@@ -10,8 +10,8 @@ import { BodyMap } from '../components/BodyMap';
 import { TouchOptions } from '../components/TouchOptions';
 import { API_BASE, getApiBase } from '../config/api';
 import ServerConfigModal from '../components/ServerConfigModal';
+import { playSpeech, stopSpeech } from '../utils/speech';
 
-const LANG_CODE = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
 
 const LANG_OPTIONS = [
   { value: 'en', label: 'English' },
@@ -155,7 +155,7 @@ const VoiceIntake = () => {
   const recognitionRef = useRef(null);
   const transcriptRef = useRef('');
   const isListeningRef = useRef(false);
-  const synthRef = useRef(window.speechSynthesis);
+  const cancelSpeechRef = useRef(null);
   const answerEndRef = useRef(null);
 
   // Keep isListeningRef in sync with isListening state
@@ -172,16 +172,17 @@ const VoiceIntake = () => {
   }, [currentQuestion, currentStepMeta]);
 
   const speak = useCallback((text) => {
-    if (isMuted || !synthRef.current) return;
-    synthRef.current.cancel();
-    const clean = text.replace(/\[INTAKE_COMPLETE\]/g, '').replace(/```[\s\S]*?```/g, '').replace(/[*#_~`]/g, '').trim();
-    if (!clean) return;
-    const utter = new SpeechSynthesisUtterance(clean);
-    utter.lang = LANG_CODE[lang] || 'hi-IN';
-    utter.rate = 0.95;
-    utter.onstart = () => setIsSpeaking(true);
-    utter.onend = () => setIsSpeaking(false);
-    synthRef.current.speak(utter);
+    if (isMuted) return;
+    if (cancelSpeechRef.current) {
+      try { cancelSpeechRef.current(); } catch (_) {}
+    }
+    cancelSpeechRef.current = playSpeech(text, {
+      lang,
+      rate: 0.95,
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false)
+    });
   }, [lang, isMuted]);
 
   const replayCurrentQuestion = useCallback(() => {
@@ -192,17 +193,22 @@ const VoiceIntake = () => {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
       setHasMic(false);
-      return;
     }
     return () => {
       try { recognitionRef.current?.abort(); } catch (_) {}
-      synthRef.current?.cancel();
+      if (cancelSpeechRef.current) {
+        try { cancelSpeechRef.current(); } catch (_) {}
+      }
+      stopSpeech();
     };
   }, []);
 
   const sendAnswer = useCallback(async (answerText) => {
     if (!answerText || !answerText.trim() || isThinking || isGenerating) return;
-    synthRef.current?.cancel();
+    if (cancelSpeechRef.current) {
+      try { cancelSpeechRef.current(); } catch (_) {}
+    }
+    stopSpeech();
     setIsSpeaking(false);
     setIsListening(false);
     isListeningRef.current = false;
@@ -554,8 +560,8 @@ const VoiceIntake = () => {
             <span className="sm:hidden">{uploadedDocs.length > 0 ? `${uploadedDocs.length}` : 'Rx'}</span>
           </button>
 
-          <button onClick={() => { setIsMuted(v => !v); synthRef.current?.cancel(); setIsSpeaking(false); }} className="p-1.5 sm:p-2 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300 transition shadow-2xs cursor-pointer">
-            {isMuted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          <button onClick={() => { setIsMuted(v => !v); stopSpeech(); setIsSpeaking(false); }} className="p-1.5 sm:p-2 rounded-xl bg-white/95 backdrop-blur border border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300 transition shadow-2xs cursor-pointer" title={isMuted ? "Unmute AI Doctor" : "Mute AI Doctor"}>
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500" /> : <Volume2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSpeaking ? 'text-teal-600 animate-pulse' : ''}`} />}
           </button>
           <button
             type="button"
@@ -628,13 +634,50 @@ const VoiceIntake = () => {
 
         <div className="flex flex-col items-center text-center mt-1">
           <div className="relative">
-            <div className={`w-18 h-18 sm:w-20 sm:h-20 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-md ${isEmergency ? 'bg-rose-50 border-rose-500 shadow-rose-200' : isSpeaking ? 'bg-teal-50 border-teal-500 ring-4 ring-teal-200/60 shadow-teal-200 scale-105' : isListening ? 'bg-rose-50 border-rose-400 ring-4 ring-rose-200/60 shadow-rose-200 animate-pulse scale-105' : isThinking || isGenerating ? 'bg-slate-100 border-teal-400 animate-pulse' : 'bg-white border-slate-200 shadow-sm'}`}>
+            <button
+              type="button"
+              onClick={replayCurrentQuestion}
+              className={`w-18 h-18 sm:w-20 sm:h-20 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-md cursor-pointer hover:scale-105 active:scale-95 ${
+                isEmergency
+                  ? 'bg-rose-50 border-rose-500 shadow-rose-200'
+                  : isSpeaking
+                  ? 'bg-teal-50 border-teal-500 ring-4 ring-teal-300 shadow-teal-200 scale-105'
+                  : isListening
+                  ? 'bg-rose-50 border-rose-400 ring-4 ring-rose-200 shadow-rose-200 animate-pulse scale-105'
+                  : isThinking || isGenerating
+                  ? 'bg-slate-100 border-teal-400 animate-pulse'
+                  : 'bg-white border-slate-200 shadow-sm hover:border-teal-300'
+              }`}
+              title="Click to hear AI Doctor speak"
+            >
               <JeevanLogoIcon className="w-11 h-11 sm:w-13 sm:h-13" idPrefix="vi-bubble" />
-            </div>
+              {isSpeaking && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-teal-500 items-center justify-center text-[9px] text-white">🔊</span>
+                </span>
+              )}
+            </button>
           </div>
           <div className="mt-2.5 flex flex-col items-center">
-            <div className="flex items-center gap-1.5"><span className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">{ui.assistantTitle}</span><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">{ui.statusOnline}</span></div>
-            <span className="text-xs text-slate-500 font-medium mt-0.5">{isListening ? <span className="text-rose-600 font-semibold">{ui.listening}</span> : isSpeaking ? <span className="text-teal-700 font-semibold">{ui.speaking}</span> : isThinking || isGenerating ? <span className="text-teal-600 font-semibold">{ui.generating}</span> : <span>{ui.assistantRole}</span>}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">{ui.assistantTitle}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">{ui.statusOnline}</span>
+            </div>
+            <span className="text-xs text-slate-500 font-medium mt-0.5">
+              {isListening ? (
+                <span className="text-rose-600 font-semibold">{ui.listening}</span>
+              ) : isSpeaking ? (
+                <span className="text-teal-700 font-semibold flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                  <span>{ui.speaking}</span>
+                </span>
+              ) : isThinking || isGenerating ? (
+                <span className="text-teal-600 font-semibold">{ui.generating}</span>
+              ) : (
+                <span>{ui.assistantRole}</span>
+              )}
+            </span>
           </div>
         </div>
 
