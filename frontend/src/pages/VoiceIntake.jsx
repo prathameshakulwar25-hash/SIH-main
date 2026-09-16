@@ -19,6 +19,12 @@ const LANG_OPTIONS = [
   { value: 'mr', label: 'मराठी' },
 ];
 
+const LANG_CODE = {
+  en: 'en-IN',
+  hi: 'hi-IN',
+  mr: 'mr-IN'
+};
+
 const UI = {
   en: {
     assistantTitle: 'Jeevan',
@@ -99,6 +105,7 @@ const VoiceIntake = () => {
   const [isComplete, setIsComplete] = useState(false);
   const [isEmergency, setIsEmergency] = useState(false);
   const [hasMic, setHasMic] = useState(true);
+  const [voiceFeedbackMsg, setVoiceFeedbackMsg] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [currentStepMeta, setCurrentStepMeta] = useState(null);
@@ -453,16 +460,21 @@ const VoiceIntake = () => {
       if (textToSend) {
         transcriptRef.current = '';
         setTranscript('');
+        setVoiceFeedbackMsg('');
         sendAnswer(textToSend);
       }
       return;
     }
 
     // Stop speaking if AI is talking
-    synthRef.current?.cancel();
+    if (cancelSpeechRef.current) {
+      try { cancelSpeechRef.current(); } catch (_) {}
+    }
+    stopSpeech();
     setIsSpeaking(false);
     transcriptRef.current = '';
     setTranscript('');
+    setVoiceFeedbackMsg('');
 
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
@@ -475,6 +487,10 @@ const VoiceIntake = () => {
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch (_) {}
       }
+
+      // Immediate visual feedback that microphone is active
+      setIsListening(true);
+      isListeningRef.current = true;
 
       const rec = new SpeechRec();
       rec.continuous = false;
@@ -513,7 +529,16 @@ const VoiceIntake = () => {
         if (textToSend) {
           transcriptRef.current = '';
           setTranscript('');
+          setVoiceFeedbackMsg('');
           sendAnswer(textToSend);
+        } else {
+          setVoiceFeedbackMsg(
+            lang === 'hi'
+              ? 'आवाज़ सुनाई नहीं दी — पुनः माइक दबाएं या नीचे विकल्प चुनें।'
+              : lang === 'mr'
+              ? 'काहीही ऐकू आले नाही — पुन्हा माईक दाबा किंवा खालील पर्याय निवडा.'
+              : "Didn't catch that — tap the mic to speak again or choose an option below."
+          );
         }
       };
 
@@ -521,9 +546,22 @@ const VoiceIntake = () => {
         console.warn('[STT Error]', e.error);
         setIsListening(false);
         isListeningRef.current = false;
-        if (e.error === 'not-allowed') {
-          setHasMic(false);
-          alert(lang === 'hi' ? 'माइक्रोफ़ोन की अनुमति नहीं है। कृपया ब्राउज़र सेटिंग्स में माइक्रोफ़ोन की अनुमति दें।' : 'Microphone access was denied. Please allow microphone permissions in your browser.');
+        if (e.error === 'not-allowed' || e.error === 'permission-denied') {
+          setVoiceFeedbackMsg(
+            lang === 'hi'
+              ? 'माइक्रोफ़ोन की अनुमति नहीं मिली। कृपया ब्राउज़र सेटिंग्स में माइक्रोफ़ोन की अनुमति दें।'
+              : lang === 'mr'
+              ? 'मायक्रोफोन परवानगी नाकारली. कृपया ब्राउझर सेटिंग्जमध्ये मायक्रोफोन परवानगी द्या.'
+              : 'Microphone access was denied. Please allow microphone permissions in your browser settings.'
+          );
+        } else if (e.error === 'no-speech') {
+          setVoiceFeedbackMsg(
+            lang === 'hi'
+              ? 'आवाज़ सुनाई नहीं दी — पुनः प्रयास करें या नीचे विकल्प चुनें।'
+              : lang === 'mr'
+              ? 'काहीही ऐकू आले नाही — पुन्हा प्रयत्न करा किंवा खालील पर्याय निवडा.'
+              : 'No speech detected — tap to try again or choose an option below.'
+          );
         }
       };
 
@@ -533,6 +571,11 @@ const VoiceIntake = () => {
       console.error('[STT Start Error]', e);
       setIsListening(false);
       isListeningRef.current = false;
+      setVoiceFeedbackMsg(
+        lang === 'hi'
+          ? 'माइक्रोफ़ोन शुरू करने में समस्या आई। कृपया पुनः प्रयास करें।'
+          : 'Could not start microphone. Please try again.'
+      );
     }
   }, [hasMic, isThinking, isGenerating, lang, sendAnswer]);
 
@@ -717,6 +760,20 @@ const VoiceIntake = () => {
           {transcript && (
             <div className="bg-teal-50 border border-teal-200 text-teal-900 rounded-xl px-4 py-2 text-sm italic font-medium animate-pulse">
               "{transcript}"
+            </div>
+          )}
+
+          {voiceFeedbackMsg && !isListening && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center justify-between animate-in fade-in">
+              <span>{voiceFeedbackMsg}</span>
+              <button 
+                type="button" 
+                onClick={() => setVoiceFeedbackMsg('')} 
+                className="text-amber-600 hover:text-amber-900 ml-2 font-bold px-1"
+                title="Dismiss"
+              >
+                ✕
+              </button>
             </div>
           )}
 

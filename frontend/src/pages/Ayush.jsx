@@ -220,6 +220,15 @@ const Ayush = () => {
   }, []);
 
   const startListening = () => {
+    if (isListening) {
+      if (watchdogTimerRef.current) clearTimeout(watchdogTimerRef.current);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
     console.log('[STT] Mic button clicked — starting recognition immediately');
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -231,6 +240,9 @@ const Ayush = () => {
       try { recognitionRef.current.abort(); } catch (e) {}
     }
     if (watchdogTimerRef.current) clearTimeout(watchdogTimerRef.current);
+
+    // Stop TTS if speaking
+    stopSpeech();
 
     // 1. Instant activation visual state before onstart fires
     setIsListening(true);
@@ -658,9 +670,8 @@ const Ayush = () => {
           <div className="flex gap-2">
             <button 
               className={`p-3 rounded-full transition-all active:scale-95 flex items-center justify-center ${isListening ? 'bg-red-500 text-white shadow-lg ring-4 ring-red-200 animate-pulse' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'}`}
-              title="Speak Answer"
+              title={isListening ? "Stop Listening" : "Speak Answer"}
               onClick={startListening}
-              disabled={isListening}
             >
               <Mic className="w-6 h-6" />
             </button>
