@@ -524,8 +524,8 @@ const Landing = () => {
     setError('');
     setSuccessMsg('');
 
-    if (doctorPin.trim() !== PHYSICIAN_PIN) {
-      setError(t.wrongPin);
+    if (!doctorPin.trim()) {
+      setError(t.pinRequired || 'Please enter your Doctor Access PIN.');
       return;
     }
 
@@ -1296,7 +1296,7 @@ const Landing = () => {
                       </button>
                     </div>
                     <p className="text-slate-400 text-xs mt-1 text-right">
-                      Demo PIN: <span className="font-bold text-indigo-600">1234</span>
+                      Authorized Doctor PIN
                     </p>
                   </div>
 
@@ -1375,7 +1375,7 @@ const Landing = () => {
                           {doctorDemoOtp}
                         </span>
                         <span className="text-[10px] text-teal-700">
-                          PIN: <strong>1234</strong> • Code logged to server
+                          Doctor 2FA • Code dispatched to registered mobile
                         </span>
                       </div>
                     </div>
