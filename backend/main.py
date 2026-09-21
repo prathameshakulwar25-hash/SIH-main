@@ -1,31 +1,26 @@
-import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path)
-load_dotenv()
-
-from fastapi import FastAPI, UploadFile, File, Form, APIRouter, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import create_engine, Column, Integer, String, JSON, text, inspect, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
 import json
-import uuid
+import os
 import random
-import time
 import re
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import httpx
 import jwt
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
-from report_notifier import send_sms_dispatcher, send_email_dispatcher
-from flow_engine import FLOW_STEPS, get_or_create_session
-from grok_service import normalize_clinical_complaint
+from sqlalchemy import JSON, Column, ForeignKey, Integer, String, create_engine, inspect, text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, sessionmaker
 
+from config import settings
+from flow_engine import FLOW_STEPS
+from grok_service import normalize_clinical_complaint
+from report_notifier import send_email_dispatcher, send_sms_dispatcher
 
 # ── Pre-build a step-id → step dict for O(1) lookup ──────────────────────────
 _STEP_MAP = {s["id"]: s for s in FLOW_STEPS}
@@ -216,8 +211,8 @@ def detect_step_meta_from_reply(reply: str, user_msg_count: int) -> Optional[Dic
     return {"step_id": s["id"], "ui_type": s.get("ui_type"), "options": s.get("options")}
 
 
-# Database setup with resilient fallback
-raw_db_url = os.getenv("DATABASE_URL", "").strip()
+# Database setup with explicit environment mode gating
+raw_db_url = (settings.DATABASE_URL or os.getenv("DATABASE_URL", "")).strip()
 engine = None
 
 if raw_db_url:
@@ -226,7 +221,7 @@ if raw_db_url:
         if raw_db_url.startswith("postgres://"):
             raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
         DATABASE_URL = raw_db_url
-        
+
         connect_args = {"connect_timeout": 10}
         if "sslmode" not in DATABASE_URL and "supabase" in DATABASE_URL:
             connect_args["sslmode"] = "require"
@@ -245,8 +240,19 @@ if raw_db_url:
         db_masked = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "configured"
         print(f"[Database] Connected to production database at: {db_masked}")
     except Exception as db_err:
+        if settings.is_production:
+            raise RuntimeError(
+                f"[Fatal Database Error] Production database connection failed ({db_err}). "
+                "Automatic SQLite fallback is strictly prohibited in production mode. "
+                "Please verify DATABASE_URL and database connectivity."
+            ) from db_err
         print(f"[Database Warning] Production DB connection failed ({db_err}). Falling back to local SQLite.")
         engine = None
+elif settings.is_production:
+    raise RuntimeError(
+        "[Fatal Database Error] DATABASE_URL is not set in production mode. "
+        "PostgreSQL connection is required for production deployment."
+    )
 
 if engine is None:
     DB_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -379,8 +385,8 @@ app.add_middleware(
 )
 
 # ── JWT Authentication & Role-Based Access Control (RBAC) ──
-JWT_SECRET = os.environ.get("JWT_SECRET", "jeevan-opd-clinical-jwt-secret-key-2026-production")
-JWT_ALGORITHM = "HS256"
+JWT_SECRET = settings.JWT_SECRET
+JWT_ALGORITHM = settings.JWT_ALGORITHM
 
 security = HTTPBearer(auto_error=False)
 
@@ -405,6 +411,8 @@ def get_current_physician(credentials: Optional[HTTPAuthorizationCredentials] = 
     payload = decode_access_token(credentials.credentials)
     if payload.get("role") != "physician":
         raise HTTPException(status_code=403, detail="Access denied: Physician credentials required.")
+    if not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
     return payload
 
 def get_optional_auth_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[dict]:
@@ -416,9 +424,9 @@ def get_optional_auth_user(credentials: Optional[HTTPAuthorizationCredentials] =
     except Exception:
         return None
 
+from ocr_extractor import extract_document_data
 from red_flags import check_red_flags
 from scoring import score_ayush
-from ocr_extractor import extract_document_data
 
 ayush_router = APIRouter(prefix="/api/ayush", tags=["ayush"])
 intake_router = APIRouter(prefix="/api/intake", tags=["intake"])
@@ -494,19 +502,19 @@ def submit_assessment(submission: AnswerSubmission, db: Session = Depends(get_db
     prakriti = ", ".join(result["dominant"].get("Prakriti", []))
     agni = ", ".join(result["dominant"].get("Agni", []))
     koshtha = ", ".join(result["dominant"].get("Koshtha", []))
-    
+
     # Overwrite if exists, since it's PK
     db_result = db.query(AyushResult).filter(AyushResult.session_id == target_session_id).first()
     if not db_result:
         db_result = AyushResult(session_id=target_session_id)
         db.add(db_result)
-        
+
     db_result.prakriti = prakriti
     db_result.agni = agni
     db_result.koshtha = koshtha
     db_result.raw_tally = result["scores"]
     db.commit()
-    
+
     return {"session_id": db_result.session_id, "result": result}
 
 @intake_router.get("/{complaint}/tree")
@@ -532,7 +540,7 @@ def submit_ai_intake(req: AIIntakeSaveRequest, db: Session = Depends(get_db)):
     if not db_result:
         db_result = IntakeResult(session_id=req.session_id)
         db.add(db_result)
-        
+
     clean_complaint = normalize_clinical_complaint(req.complaint or "voice-consultation")
     db_result.intake_type = clean_complaint
     db_result.summary = {
@@ -552,12 +560,12 @@ def submit_intake(complaint: str, intake_data: dict, session_id: Optional[str] =
     ensure_not_locked(db, target_session_id)
     flags = check_red_flags(intake_data, complaint_type=complaint)
     clean_complaint = normalize_clinical_complaint(complaint)
-    
+
     db_result = db.query(IntakeResult).filter(IntakeResult.session_id == target_session_id).first()
     if not db_result:
         db_result = IntakeResult(session_id=target_session_id)
         db.add(db_result)
-        
+
     db_result.intake_type = complaint
     db_result.summary = dict(intake_data) if isinstance(intake_data, dict) else {"data": intake_data}
     db_result.summary["complaint_title"] = clean_complaint
@@ -573,7 +581,7 @@ async def upload_document(file: UploadFile = File(...), session_id: Optional[str
     ensure_not_locked(db, session_id)
     content = await file.read()
     raw_text, parsed_data = await extract_document_data(content, filename=file.filename or "")
-    
+
     db_doc = Document(
         session_id=session_id,
         raw_text=raw_text,
@@ -613,7 +621,7 @@ def get_summary(session_id: str, db: Session = Depends(get_db)):
     docs = db.query(Document).filter(Document.session_id == session_id).all()
     meta = db.query(SessionMeta).filter(SessionMeta.session_id == session_id).first()
     consent = db.query(ConsentRecord).filter(ConsentRecord.session_id == session_id).first()
-    
+
     docs_labs = []
     docs_meds = []
     docs_diag = []
@@ -688,17 +696,24 @@ def get_summary(session_id: str, db: Session = Depends(get_db)):
     }
 
 @summary_router.post("/{session_id}/lock")
-def lock_session(session_id: str, db: Session = Depends(get_db)):
+def lock_session(session_id: str, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
     meta = db.query(SessionMeta).filter(SessionMeta.session_id == session_id).first()
     if not meta:
         meta = SessionMeta(session_id=session_id)
         db.add(meta)
     meta.locked = 1
     review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
-    if review:
+    if not review:
+        review = PhysicianReview(session_id=session_id, physician_id=physician_id, verified=1)
+        db.add(review)
+    else:
         review.verified = 1
+        review.physician_id = physician_id
     db.commit()
-    return {"status": "locked", "session_id": session_id}
+    return {"status": "locked", "locked": True, "session_id": session_id, "physician_id": physician_id}
 
 from fhir_exporter import generate_fhir_bundle
 from report_notifier import dispatch_clinical_report
@@ -707,10 +722,14 @@ consent_router = APIRouter(prefix="/api/consent", tags=["consent"])
 abdm_router = APIRouter(prefix="/api/abdm", tags=["abdm"])
 
 from abdm_service import (
-    generate_aadhaar_otp, verify_aadhaar_otp, 
-    generate_mobile_otp, verify_mobile_otp, 
-    search_abha_by_id, SAMPLE_ABDM_PROFILES
+    SAMPLE_ABDM_PROFILES,
+    generate_aadhaar_otp,
+    generate_mobile_otp,
+    search_abha_by_id,
+    verify_aadhaar_otp,
+    verify_mobile_otp,
 )
+
 
 class ConsentRequest(BaseModel):
     session_id: str
@@ -744,7 +763,7 @@ def grant_consent(req: ConsentRequest, db: Session = Depends(get_db)):
     consent = db.query(ConsentRecord).filter(ConsentRecord.session_id == req.session_id).first()
     if not consent:
         consent = ConsentRecord(
-            session_id=req.session_id, 
+            session_id=req.session_id,
             abha_id=req.abha_id,
             name=req.name,
             gender=req.gender,
@@ -767,13 +786,13 @@ def grant_consent(req: ConsentRequest, db: Session = Depends(get_db)):
         if req.profile_data: consent.profile_data = req.profile_data
         db.commit()
     return {
-        "status": "granted", 
-        "session_id": req.session_id, 
-        "abha_id": req.abha_id, 
+        "status": "granted",
+        "session_id": req.session_id,
+        "abha_id": req.abha_id,
         "abha_address": req.abha_address,
         "name": req.name,
-        "consents": req.consents, 
-        "email": req.email, 
+        "consents": req.consents,
+        "email": req.email,
         "phone": req.phone
     }
 
@@ -827,25 +846,28 @@ def abdm_search(q: str):
 @abdm_router.get("/fhir/{session_id}")
 def get_abdm_fhir_bundle(session_id: str, db: Session = Depends(get_db)):
     """Exports NRCES / NDHM compliant HL7 FHIR R4 Bundle for the encounter (Milestone 1)."""
+    meta = db.query(SessionMeta).filter(SessionMeta.session_id == session_id).first()
+    if not meta or meta.locked != 1:
+        raise HTTPException(status_code=400, detail="Cannot export FHIR bundle for a draft session. Must be locked first.")
     ensure_consent_granted(db, session_id)
     consent = db.query(ConsentRecord).filter(ConsentRecord.session_id == session_id).first()
     intake = db.query(IntakeResult).filter(IntakeResult.session_id == session_id).first()
     ayush = db.query(AyushResult).filter(AyushResult.session_id == session_id).first()
     docs = db.query(Document).filter(Document.session_id == session_id).all()
-    
+
     labs = []
     meds = []
     for d in docs:
         if d.parsed_data:
             labs.extend(d.parsed_data.get("labs", []))
             meds.extend(d.parsed_data.get("medications", []))
-    
+
     patient_meta = {
         "name": consent.name if consent else None,
         "gender": consent.gender if consent else None,
         "dob": consent.dob if consent else None,
     }
-    
+
     ayush_prof = {
         "prakriti": ayush.prakriti if ayush else None,
         "agni": ayush.agni if ayush else None,
@@ -888,7 +910,7 @@ def send_report_endpoint(session_id: str, req: Optional[SendReportRequest] = Non
 
     # Retrieve full encounter data
     encounter_data = get_summary(session_id, db)
-    
+
     # Dispatch report via configured notification channels
     result = dispatch_clinical_report(
         session_id=session_id,
@@ -903,7 +925,7 @@ def export_fhir(session_id: str, db: Session = Depends(get_db)):
     meta = db.query(SessionMeta).filter(SessionMeta.session_id == session_id).first()
     if not meta or meta.locked != 1:
         raise HTTPException(status_code=400, detail="Cannot export FHIR bundle for a draft session. Must be locked first.")
-    
+
     consent = db.query(ConsentRecord).filter(ConsentRecord.session_id == session_id).first()
     ayush = db.query(AyushResult).filter(AyushResult.session_id == session_id).first()
     intake = db.query(IntakeResult).filter(IntakeResult.session_id == session_id).first()
@@ -943,7 +965,7 @@ def export_fhir(session_id: str, db: Session = Depends(get_db)):
         ayush_profile=ayush_prof,
         patient_meta=patient_meta
     )
-    
+
     # Live HL7 FHIR R4 Server Dispatch (HAPI FHIR reference server or configured EMR)
     fhir_server_url = os.environ.get("FHIR_SERVER_URL", "https://hapi.fhir.org/baseR4").strip().rstrip("/")
     bundle_dict = json.loads(bundle.json()) if hasattr(bundle, "json") else (bundle.dict() if hasattr(bundle, "dict") else bundle)
@@ -984,8 +1006,7 @@ def export_fhir(session_id: str, db: Session = Depends(get_db)):
     }
 
 # ── Grok LLM AI Endpoints ──────────────────────────────────────────────────────
-from grok_service import grok_service, build_intake_system_prompt
-import flow_engine
+from grok_service import grok_service
 
 llm_router = APIRouter(prefix="/api/llm", tags=["llm"])
 
@@ -1345,11 +1366,15 @@ def get_physician_report(session_id: str, db: Session = Depends(get_db), physici
 @physician_router.post("/reports/{session_id}/review-steps")
 def save_physician_review_steps(session_id: str, req: PhysicianReviewStepsRequest, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
     """Persist doctor approval or edits for the 9 standard clinical review steps."""
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
+
     intake = db.query(IntakeResult).filter(IntakeResult.session_id == session_id).first()
     if not intake:
         intake = IntakeResult(session_id=session_id, intake_type="voice-consultation", summary={})
         db.add(intake)
-    
+
     summary_data = dict(intake.summary or {})
     existing = dict(summary_data.get("physician_review_steps", {}))
     existing.update(req.review_steps)
@@ -1359,25 +1384,32 @@ def save_physician_review_steps(session_id: str, req: PhysicianReviewStepsReques
 
     review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
     if not review:
-        review = PhysicianReview(session_id=session_id, physician_id=physician.get("sub", "physician-1"))
+        review = PhysicianReview(session_id=session_id, physician_id=physician_id)
         db.add(review)
+    else:
+        review.physician_id = physician_id
     db.commit()
 
     return {
         "status": "review_steps_saved",
         "session_id": session_id,
-        "review_steps": existing
+        "review_steps": existing,
+        "physician_id": physician_id
     }
 
 @physician_router.post("/reports/{session_id}/verify")
 def verify_physician_report(session_id: str, req: PhysicianVerifyRequest, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
     """Mark a report as verified by the physician."""
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
+
     review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
     if not review:
-        review = PhysicianReview(session_id=session_id, physician_id=physician.get("sub", "physician-1"))
+        review = PhysicianReview(session_id=session_id, physician_id=physician_id)
         db.add(review)
     review.verified = 1
-    review.physician_id = physician.get("sub", req.physician_id or review.physician_id or "physician-1")
+    review.physician_id = physician_id
     if req.notes:
         review.notes = req.notes
     review.timestamp = datetime.now(timezone.utc).isoformat()
@@ -1387,28 +1419,36 @@ def verify_physician_report(session_id: str, req: PhysicianVerifyRequest, db: Se
 @physician_router.post("/reports/{session_id}/notes")
 def add_physician_notes(session_id: str, req: PhysicianNotesRequest, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
     """Add or update physician notes for a report."""
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
+
     review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
     if not review:
-        review = PhysicianReview(session_id=session_id, physician_id=physician.get("sub", "physician-1"))
+        review = PhysicianReview(session_id=session_id, physician_id=physician_id)
         db.add(review)
     review.notes = req.notes
-    review.physician_id = physician.get("sub", req.physician_id or review.physician_id or "physician-1")
+    review.physician_id = physician_id
     db.commit()
-    return {"status": "notes_saved", "session_id": session_id}
+    return {"status": "notes_saved", "session_id": session_id, "physician_id": physician_id}
 
 @physician_router.post("/reports/{session_id}/summary")
 @physician_router.put("/reports/{session_id}/summary")
 def update_physician_report_summary(session_id: str, req: PhysicianSummaryUpdateRequest, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
     """Allows the physician to directly edit and correct the AI clinical summary report."""
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
+
     intake = db.query(IntakeResult).filter(IntakeResult.session_id == session_id).first()
     if not intake:
         intake = IntakeResult(session_id=session_id, intake_type="voice-consultation", summary={})
         db.add(intake)
-    
+
     summary_data = dict(intake.summary or {})
     summary_data["clinician_summary"] = req.clinician_summary
     summary_data["physician_edited"] = True
-    summary_data["last_edited_by"] = physician.get("sub", req.physician_id or "physician-1")
+    summary_data["last_edited_by"] = physician_id
     summary_data["last_edited_at"] = datetime.now(timezone.utc).isoformat()
     intake.summary = summary_data
     db.commit()
@@ -1417,27 +1457,33 @@ def update_physician_report_summary(session_id: str, req: PhysicianSummaryUpdate
         "session_id": session_id,
         "clinician_summary": req.clinician_summary,
         "physician_edited": True,
-        "last_edited_at": summary_data["last_edited_at"]
+        "last_edited_at": summary_data["last_edited_at"],
+        "last_edited_by": physician_id
     }
 
 @physician_router.post("/reports/{session_id}/criticality")
 def set_criticality(session_id: str, urgency: str = "routine", critical: bool = False, red_flags: Optional[List[str]] = None, db: Session = Depends(get_db), physician: dict = Depends(get_current_physician)):
     """Set criticality metadata for an intake report (called after triage analysis)."""
+    physician_id = physician.get("sub")
+    if not physician_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token: missing subject claim.")
+
     review = db.query(PhysicianReview).filter(PhysicianReview.session_id == session_id).first()
     if not review:
-        review = PhysicianReview(session_id=session_id, physician_id=physician.get("sub", "physician-1"))
+        review = PhysicianReview(session_id=session_id, physician_id=physician_id)
         db.add(review)
     review.urgency = urgency
     review.critical = 1 if critical else 0
     review.red_flags = red_flags or []
+    review.physician_id = physician_id
     db.commit()
-    return {"status": "criticality_set", "session_id": session_id, "urgency": urgency, "critical": critical}
+    return {"status": "criticality_set", "session_id": session_id, "urgency": urgency, "critical": critical, "physician_id": physician_id}
 
 # ── Authentication / OTP Verification Router ──
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 AUTH_OTP_STORE: Dict[str, Dict[str, Any]] = {}
-PHYSICIAN_PIN = os.environ.get("PHYSICIAN_PIN", "1234")
+PHYSICIAN_PIN = settings.PHYSICIAN_PIN
 
 class PatientSendOtpRequest(BaseModel):
     name: str
@@ -1469,7 +1515,7 @@ def patient_send_otp(req: PatientSendOtpRequest):
         raise HTTPException(status_code=400, detail="Patient full name is required.")
     if len(mobile) != 10 or mobile[0] not in "6789":
         raise HTTPException(status_code=400, detail="Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).")
-    
+
     otp = f"{random.randint(100000, 999999)}"
     expires_at = time.time() + 300  # 5 mins
     AUTH_OTP_STORE[f"patient_{mobile}"] = {
@@ -1479,11 +1525,11 @@ def patient_send_otp(req: PatientSendOtpRequest):
         "expires_at": expires_at,
         "created_at": time.time()
     }
-    
+
     # Send SMS notification via MSG91/Twilio dispatcher
     sms_text = f"Your Jeevan Health login OTP is {otp}. Valid for 5 minutes. Do not share this OTP."
     sms_res = send_sms_dispatcher(mobile, sms_text)
-    
+
     # Secure server audit log (visible on local console for development)
     print(f"[SECURE AUTH DISPATCH] Patient Mobile: +91 {mobile} | OTP: {otp}")
 
@@ -1501,30 +1547,30 @@ def patient_verify_otp(req: PatientVerifyOtpRequest, db: Session = Depends(get_d
     name = req.name.strip()
     mobile = re.sub(r"\D", "", req.mobile)
     otp = req.otp.strip()
-    
+
     if not otp:
         raise HTTPException(status_code=400, detail="OTP code is required.")
-    
+
     cache_key = f"patient_{mobile}"
     stored = AUTH_OTP_STORE.get(cache_key)
-    
+
     is_valid = False
     if stored and stored.get("otp") == otp:
         if time.time() > stored.get("expires_at", 0):
             raise HTTPException(status_code=400, detail="OTP has expired. Please request a new OTP.")
         is_valid = True
-    
+
     if not is_valid:
         raise HTTPException(status_code=400, detail="Incorrect OTP. Please enter the valid 6-digit code sent to your mobile.")
-    
+
     # Clear verified OTP
     AUTH_OTP_STORE.pop(cache_key, None)
-    
+
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     effective_abha = req.abha_id.strip() if req.abha_id and req.abha_id.strip() else f"ABHA-{int(time.time())}"
     channel = req.channel or "kiosk"
     token_number = generate_opd_token(db, channel)
-    
+
     # Save/create consent record
     consent = ConsentRecord(
         session_id=session_id,
@@ -1551,7 +1597,7 @@ def patient_verify_otp(req: PatientVerifyOtpRequest, db: Session = Depends(get_d
         "mobile": mobile,
         "abha_id": effective_abha
     }, expires_delta=14400)
-    
+
     return {
         "status": "authenticated",
         "role": "patient",
@@ -1589,7 +1635,7 @@ def patient_send_email_otp(req: PatientSendEmailOtpRequest):
         raise HTTPException(status_code=400, detail="Patient name is required.")
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=400, detail="Please enter a valid email address.")
-    
+
     otp = f"{random.randint(100000, 999999)}"
     expires_at = time.time() + 300
     AUTH_OTP_STORE[f"email_{email}"] = {
@@ -1598,7 +1644,7 @@ def patient_send_email_otp(req: PatientSendEmailOtpRequest):
         "expires_at": expires_at,
         "created_at": time.time()
     }
-    
+
     html_content = f"""
     <div style="font-family:sans-serif;max-width:500px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
         <h2 style="color:#0f766e;margin-top:0;">Jeevan Verification Code</h2>
@@ -1627,28 +1673,28 @@ def patient_verify_email_otp(req: PatientVerifyEmailOtpRequest, db: Session = De
     name = req.name.strip()
     email = req.email.strip().lower()
     otp = req.otp.strip()
-    
+
     if not otp:
         raise HTTPException(status_code=400, detail="OTP code is required.")
-    
+
     cache_key = f"email_{email}"
     stored = AUTH_OTP_STORE.get(cache_key)
-    
+
     is_valid = False
     if stored and stored.get("otp") == otp:
         if time.time() > stored.get("expires_at", 0):
             raise HTTPException(status_code=400, detail="OTP has expired. Please request a new code.")
         is_valid = True
-    
+
     if not is_valid:
         raise HTTPException(status_code=400, detail="Incorrect verification code. Please check your email.")
-    
+
     AUTH_OTP_STORE.pop(cache_key, None)
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     abha_id = f"ABHA-{int(time.time())}"
     channel = req.channel or "kiosk"
     token_number = generate_opd_token(db, channel)
-    
+
     consent = ConsentRecord(
         session_id=session_id,
         abha_id=abha_id,
@@ -1674,7 +1720,7 @@ def patient_verify_email_otp(req: PatientVerifyEmailOtpRequest, db: Session = De
         "email": email,
         "abha_id": abha_id
     }, expires_delta=14400)
-    
+
     return {
         "status": "authenticated",
         "role": "patient",
@@ -1694,10 +1740,10 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
     abha_raw = req.abha_id.strip()
     if not abha_raw:
         raise HTTPException(status_code=400, detail="ABHA ID or @abdm address is required.")
-    
+
     from abdm_service import search_abha_by_id
     matched_profile = search_abha_by_id(abha_raw)
-    
+
     patient_name = req.name.strip() if req.name and req.name.strip() else (matched_profile.get("name") if matched_profile else "Ayushman Patient")
     session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
     effective_abha = matched_profile.get("abha_number") if matched_profile else abha_raw
@@ -1708,7 +1754,7 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
     effective_email = matched_profile.get("email") if matched_profile else None
     channel = req.channel or "kiosk"
     token_number = generate_opd_token(db, channel)
-    
+
     consent = ConsentRecord(
         session_id=session_id,
         abha_id=effective_abha,
@@ -1736,7 +1782,7 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
         "name": patient_name,
         "abha_id": effective_abha
     }, expires_delta=14400)
-    
+
     return {
         "status": "authenticated",
         "role": "patient",
@@ -1761,11 +1807,11 @@ def patient_abha_login(req: PatientAbhaLoginRequest, db: Session = Depends(get_d
 def physician_send_otp(req: PhysicianSendOtpRequest):
     if req.pin.strip() != PHYSICIAN_PIN:
         raise HTTPException(status_code=401, detail="Incorrect Physician Access PIN. Please try again.")
-    
+
     mobile = re.sub(r"\D", "", req.mobile or "9876543210")
     if len(mobile) != 10:
         mobile = "9876543210"
-    
+
     otp = f"{random.randint(100000, 999999)}"
     expires_at = time.time() + 300
     AUTH_OTP_STORE["physician_otp"] = {
@@ -1774,7 +1820,7 @@ def physician_send_otp(req: PhysicianSendOtpRequest):
         "physician_id": req.physician_id or "physician-1",
         "expires_at": expires_at
     }
-    
+
     sms_text = f"Your Jeevan Doctor Access verification code is {otp}. Valid for 5 minutes."
     sms_res = send_sms_dispatcher(mobile, sms_text)
     print(f"[SECURE AUTH DISPATCH] Doctor 2FA Code: {otp} for PIN {req.pin}")
@@ -1792,23 +1838,23 @@ def physician_send_otp(req: PhysicianSendOtpRequest):
 def physician_verify_otp(req: PhysicianVerifyOtpRequest):
     if req.pin.strip() != PHYSICIAN_PIN:
         raise HTTPException(status_code=401, detail="Incorrect Physician Access PIN.")
-    
+
     otp = req.otp.strip()
     if not otp:
         raise HTTPException(status_code=400, detail="Doctor verification OTP is required.")
-    
+
     stored = AUTH_OTP_STORE.get("physician_otp")
     is_valid = False
     if stored and stored.get("otp") == otp:
         if time.time() > stored.get("expires_at", 0):
             raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new code.")
         is_valid = True
-    
+
     if not is_valid:
         raise HTTPException(status_code=400, detail="Incorrect verification code. Please enter the valid code dispatched to registered mobile.")
-    
+
     AUTH_OTP_STORE.pop("physician_otp", None)
-    
+
     token = create_access_token({
         "sub": req.physician_id or "physician-1",
         "role": "physician",
@@ -1844,7 +1890,7 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
     """
     auth_key = os.environ.get("MSG91_AUTH_KEY", "569169ArD0hn6ubGkl6aa07883P1")
     verified_mobile = req.mobile
-    
+
     try:
         url = "https://control.msg91.com/api/v5/widget/verifyAccessToken"
         headers = {"Content-Type": "application/json"}
@@ -1866,7 +1912,7 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
     effective_abha = req.abha_id.strip() if req.abha_id and req.abha_id.strip() else f"ABHA-{int(time.time())}"
     channel = req.channel or "kiosk"
     token_number = generate_opd_token(db, channel)
-    
+
     if req.role == "physician":
         token = create_access_token({
             "sub": "physician-1",
@@ -1884,7 +1930,7 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
             "access_token": token,
             "token_type": "bearer"
         }
-    
+
     # Save patient consent
     consent = ConsentRecord(
         session_id=session_id,
@@ -1911,7 +1957,7 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
         "mobile": verified_mobile,
         "abha_id": effective_abha
     }, expires_delta=14400)
-    
+
     return {
         "status": "authenticated",
         "role": "patient",

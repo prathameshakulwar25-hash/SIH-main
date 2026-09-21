@@ -8,7 +8,7 @@ import {
   Clock, Calendar, Send, Phone, Mail, Home
 } from 'lucide-react';
 import { useGlobalState } from '../context/GlobalStateContext';
-import { API_BASE } from '../config/api';
+import { API_BASE, apiFetch } from '../config/api';
 
 // Complete Summary i18n Dictionary for clinical values, labels, and codes
 const SUMMARY_I18N = {
@@ -637,6 +637,8 @@ const ClinicalSummary = () => {
   const [rejectionNote, setRejectionNote] = useState('');
   const [amendmentDrafts, setAmendmentDrafts] = useState({});
   const [dispatchStatus, setDispatchStatus] = useState({ sending: false, message: '', error: '' });
+  const [showLockModal, setShowLockModal] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
 
   // Sync if globalState changes
   useEffect(() => {
@@ -670,8 +672,36 @@ const ClinicalSummary = () => {
     return 'border-l-4 border-l-blue-500 shadow-sm transition-all duration-300';
   };
 
-  const handleAccept = (sectionId) => {
+  const syncReviewSteps = async (newReviewSteps, previousState) => {
+    try {
+      setSummaryError(null);
+      const res = await apiFetch(`/api/physician/reports/${sessionId}/review-steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ review_steps: newReviewSteps })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.detail || `Server returned error status ${res.status}`;
+        throw new Error(msg);
+      }
+      return true;
+    } catch (err) {
+      console.error('[PhysicianReview] Failed to persist review step:', err);
+      if (previousState) {
+        setReviewState(previousState);
+        updateState({ physician_review: previousState });
+      }
+      setSummaryError(lang === 'hi' 
+        ? `समीक्षा निर्णय सहेजने में विफल: ${err.message}` 
+        : `Failed to save review decision to server: ${err.message}`);
+      return false;
+    }
+  };
+
+  const handleAccept = async (sectionId) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const previous = { ...reviewState };
     const updated = {
       ...reviewState,
       [sectionId]: {
@@ -686,6 +716,7 @@ const ClinicalSummary = () => {
     setEditingSection(null);
     setRejectingSection(null);
     console.log(`[PhysicianReview] Section accepted: ${sectionId} at ${timestamp}`);
+    await syncReviewSteps(updated, previous);
   };
 
   const handleStartAmend = (sectionId, currentValues = {}) => {
@@ -718,7 +749,7 @@ const ClinicalSummary = () => {
     console.log(`[PhysicianReview] Started amending section: ${sectionId}`);
   };
 
-  const handleSaveAmend = (sectionId) => {
+  const handleSaveAmend = async (sectionId) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const rawAmends = amendmentDrafts[sectionId] || {};
     const cleanAmends = {};
@@ -742,6 +773,7 @@ const ClinicalSummary = () => {
       }
     });
 
+    const previous = { ...reviewState };
     const updated = {
       ...reviewState,
       [sectionId]: {
@@ -755,6 +787,7 @@ const ClinicalSummary = () => {
     updateState({ physician_review: updated });
     setEditingSection(null);
     console.log(`[PhysicianReview] Section amended: ${sectionId} at ${timestamp}`, cleanAmends);
+    await syncReviewSteps(updated, previous);
   };
 
   const handleCancelAmend = (sectionId) => {
@@ -768,8 +801,9 @@ const ClinicalSummary = () => {
     setRejectionNote(reviewState[sectionId]?.reason || '');
   };
 
-  const handleConfirmReject = (sectionId) => {
+  const handleConfirmReject = async (sectionId) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const previous = { ...reviewState };
     const updated = {
       ...reviewState,
       [sectionId]: {
@@ -784,6 +818,7 @@ const ClinicalSummary = () => {
     setRejectingSection(null);
     setRejectionNote('');
     console.log(`[PhysicianReview] Section rejected: ${sectionId} at ${timestamp}. Reason: ${rejectionNote.trim() || 'No reason specified'}`);
+    await syncReviewSteps(updated, previous);
   };
 
   const handleCancelReject = () => {
@@ -791,111 +826,120 @@ const ClinicalSummary = () => {
     setRejectionNote('');
   };
 
-  useEffect(() => {
-    fetch(`${API_BASE}/api/summary/${sessionId}`)
-      .then(res => res.json())
-      .then(d => {
-        // Merge DB data with Global State
-        const mergedAyush = globalState.ayush_result ? {
-          prakriti: globalState.ayush_result.result?.dominant?.Prakriti?.join(', ') || 'N/A',
-          agni: globalState.ayush_result.result?.dominant?.Agni?.join(', ') || 'N/A',
-          koshtha: globalState.ayush_result.result?.dominant?.Koshtha?.join(', ') || 'N/A'
-        } : (globalState.ayush_profile ? {
-          prakriti: globalState.ayush_profile.dominant?.Prakriti?.join(', ') || 'N/A',
-          agni: globalState.ayush_profile.dominant?.Agni?.join(', ') || 'N/A',
-          koshtha: globalState.ayush_profile.dominant?.Koshtha?.join(', ') || 'N/A'
-        } : d.ayush_profile);
-        
-        const mergedIntake = globalState.intake_result ? {
-          type: cleanClinicalTitle(globalState.complaint || globalState.intake_result.summary?.type || d.intake_triage?.type || 'General Acute Complaint'),
-          summary: globalState.intake_result.summary || d.intake_triage?.summary || {},
-          flags: globalState.intake_result.flags || d.intake_triage?.flags || []
-        } : (d.intake_triage ? {
-          ...d.intake_triage,
-          type: cleanClinicalTitle(d.intake_triage.type)
-        } : d.intake_triage);
-        
-        let mergedLabs = d.documents?.labs || [];
-        let mergedMeds = d.documents?.medications || [];
-        let mergedItems = d.documents?.items ? [...d.documents.items] : [];
-        
-        if (globalState.documents && globalState.documents.length > 0) {
-           globalState.documents.forEach((doc, idx) => {
-              if (doc.labs) mergedLabs = [...mergedLabs, ...doc.labs];
-              if (doc.medications) mergedMeds = [...mergedMeds, ...doc.medications];
-              const exists = mergedItems.some(it => (it.id && it.id === doc.id) || (it.timestamp === doc.timestamp && it.raw_text === doc.raw_text));
-              if (!exists) {
-                mergedItems.push({
-                  id: doc.id || `global-doc-${idx}`,
-                  timestamp: doc.timestamp || new Date().toISOString(),
-                  dates: doc.dates || [],
-                  medications: doc.medications || [],
-                  labs: doc.labs || [],
-                  raw_text: doc.raw_text || ''
-                });
-              }
-           });
-        }
-        
-        // Remove duplicates
-        mergedLabs = Array.from(new Set(mergedLabs.map(JSON.stringify))).map(JSON.parse);
-        mergedMeds = Array.from(new Set(mergedMeds.map(JSON.stringify))).map(JSON.parse);
-        
-        // If mergedItems is still empty but labs or meds exist (e.g. from existing test fixtures)
-        if (mergedItems.length === 0) {
-          if (mergedMeds.length > 0) {
-            mergedItems.push({
-              id: 'synth-meds-1',
-              timestamp: d.created_at || new Date().toISOString(),
-              dates: [],
-              medications: mergedMeds,
-              labs: [],
-              raw_text: ''
-            });
-          }
-          if (mergedLabs.length > 0) {
-            mergedItems.push({
-              id: 'synth-labs-1',
-              timestamp: d.created_at || new Date().toISOString(),
-              dates: [],
-              medications: [],
-              labs: mergedLabs,
-              raw_text: ''
-            });
-          }
-        }
+  const loadSummaryData = async () => {
+    try {
+      const res = await apiFetch(`/api/summary/${sessionId}`);
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const d = await res.json();
 
-        const patientDetails = {
-          name: globalState.patientName || d.patient_name || d.patient_details?.name || 'Ayushman Patient',
-          gender: globalState.gender || globalState.abha_profile?.gender || d.patient_details?.gender,
-          dob: globalState.dob || globalState.abha_profile?.dob || d.patient_details?.dob,
-          age: d.patient_details?.age || globalState.age || globalState.abha_profile?.year_of_birth,
-          phone: globalState.patient_contact?.phone || globalState.mobile || d.patient_details?.phone,
-          email: globalState.patient_contact?.email || globalState.email || d.patient_details?.email,
-          abha_id: globalState.abha_id || d.patient_details?.abha_id || d.abha_id,
-          abha_address: globalState.abha_address || globalState.abha_profile?.abha_address || d.patient_details?.abha_address,
-        };
-
-        setData({
-          ...d,
-          patient_name: patientDetails.name,
-          patient_details: patientDetails,
-          patient: patientDetails,
-          abha_id: patientDetails.abha_id,
-          ayush_profile: mergedAyush,
-          intake_triage: mergedIntake,
-          documents: {
-            labs: mergedLabs,
+      // Merge DB data with Global State
+      const mergedAyush = globalState.ayush_result ? {
+        prakriti: globalState.ayush_result.result?.dominant?.Prakriti?.join(', ') || 'N/A',
+        agni: globalState.ayush_result.result?.dominant?.Agni?.join(', ') || 'N/A',
+        koshtha: globalState.ayush_result.result?.dominant?.Koshtha?.join(', ') || 'N/A'
+      } : (globalState.ayush_profile ? {
+        prakriti: globalState.ayush_profile.dominant?.Prakriti?.join(', ') || 'N/A',
+        agni: globalState.ayush_profile.dominant?.Agni?.join(', ') || 'N/A',
+        koshtha: globalState.ayush_profile.dominant?.Koshtha?.join(', ') || 'N/A'
+      } : d.ayush_profile);
+      
+      const mergedIntake = globalState.intake_result ? {
+        type: cleanClinicalTitle(globalState.complaint || globalState.intake_result.summary?.type || d.intake_triage?.type || 'General Acute Complaint'),
+        summary: globalState.intake_result.summary || d.intake_triage?.summary || {},
+        flags: globalState.intake_result.flags || d.intake_triage?.flags || []
+      } : (d.intake_triage ? {
+        ...d.intake_triage,
+        type: cleanClinicalTitle(d.intake_triage.type)
+      } : d.intake_triage);
+      
+      let mergedLabs = d.documents?.labs || [];
+      let mergedMeds = d.documents?.medications || [];
+      let mergedItems = d.documents?.items ? [...d.documents.items] : [];
+      
+      if (globalState.documents && globalState.documents.length > 0) {
+         globalState.documents.forEach((doc, idx) => {
+            if (doc.labs) mergedLabs = [...mergedLabs, ...doc.labs];
+            if (doc.medications) mergedMeds = [...mergedMeds, ...doc.medications];
+            const exists = mergedItems.some(it => (it.id && it.id === doc.id) || (it.timestamp === doc.timestamp && it.raw_text === doc.raw_text));
+            if (!exists) {
+              mergedItems.push({
+                id: doc.id || `global-doc-${idx}`,
+                timestamp: doc.timestamp || new Date().toISOString(),
+                dates: doc.dates || [],
+                medications: doc.medications || [],
+                labs: doc.labs || [],
+                raw_text: doc.raw_text || ''
+              });
+            }
+         });
+      }
+      
+      // Remove duplicates
+      mergedLabs = Array.from(new Set(mergedLabs.map(JSON.stringify))).map(JSON.parse);
+      mergedMeds = Array.from(new Set(mergedMeds.map(JSON.stringify))).map(JSON.parse);
+      
+      // If mergedItems is still empty but labs or meds exist (e.g. from existing test fixtures)
+      if (mergedItems.length === 0) {
+        if (mergedMeds.length > 0) {
+          mergedItems.push({
+            id: 'synth-meds-1',
+            timestamp: d.created_at || new Date().toISOString(),
+            dates: [],
             medications: mergedMeds,
-            items: mergedItems
-          }
-        });
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to load clinical summary:", err);
-        setLoading(false);
+            labs: [],
+            raw_text: ''
+          });
+        }
+        if (mergedLabs.length > 0) {
+          mergedItems.push({
+            id: 'synth-labs-1',
+            timestamp: d.created_at || new Date().toISOString(),
+            dates: [],
+            medications: [],
+            labs: mergedLabs,
+            raw_text: ''
+          });
+        }
+      }
+
+      const patientDetails = {
+        name: globalState.patientName || d.patient_name || d.patient_details?.name || 'Ayushman Patient',
+        gender: globalState.gender || globalState.abha_profile?.gender || d.patient_details?.gender,
+        dob: globalState.dob || globalState.abha_profile?.dob || d.patient_details?.dob,
+        age: d.patient_details?.age || globalState.age || globalState.abha_profile?.year_of_birth,
+        phone: globalState.patient_contact?.phone || globalState.mobile || d.patient_details?.phone,
+        email: globalState.patient_contact?.email || globalState.email || d.patient_details?.email,
+        abha_id: globalState.abha_id || d.patient_details?.abha_id || d.abha_id,
+        abha_address: globalState.abha_address || globalState.abha_profile?.abha_address || d.patient_details?.abha_address,
+      };
+
+      if (d.physician_review_steps && Object.keys(d.physician_review_steps).length > 0) {
+        setReviewState(prev => ({ ...d.physician_review_steps, ...prev }));
+      }
+
+      setData({
+        ...d,
+        patient_name: patientDetails.name,
+        patient_details: patientDetails,
+        patient: patientDetails,
+        abha_id: patientDetails.abha_id,
+        ayush_profile: mergedAyush,
+        intake_triage: mergedIntake,
+        documents: {
+          labs: mergedLabs,
+          medications: mergedMeds,
+          items: mergedItems
+        }
       });
+      setLoading(false);
+    } catch (err) {
+      console.error("Failed to load clinical summary:", err);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSummaryData();
   }, [sessionId, globalState]);
 
   // Lock gating logic
@@ -904,8 +948,9 @@ const ClinicalSummary = () => {
   );
   const canLock = allReviewed && !data?.locked;
 
-  const handleApproveAllSections = () => {
+  const handleApproveAllSections = async () => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const previous = { ...reviewState };
     const updated = { ...reviewState };
     ALL_SECTIONS.forEach(sec => {
       if (!updated[sec] || updated[sec].status !== 'amended') {
@@ -919,11 +964,7 @@ const ClinicalSummary = () => {
     });
     setReviewState(updated);
     updateState({ physician_review: updated });
-    fetch(`${API_BASE}/api/physician/reports/${sessionId}/review-steps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ physician_id: 'physician-1', review_steps: updated })
-    }).catch(e => console.warn('Could not sync review steps to backend', e));
+    await syncReviewSteps(updated, previous);
   };
 
   const handleLock = () => {
@@ -931,83 +972,104 @@ const ClinicalSummary = () => {
       console.warn('[PhysicianReview] Lock prevented: not all sections reviewed.');
       return;
     }
-    setLocking(true);
-    fetch(`${API_BASE}/api/summary/${sessionId}/lock`, { method: 'POST' })
-      .then(res => res.json())
-      .then(() => {
-        if (sessionStorage.getItem('session_id') === sessionId) {
-          sessionStorage.removeItem('session_id');
-        }
-        setData(prev => ({ ...prev, locked: true }));
-        setLocking(false);
-        console.log('[PhysicianReview] Clinical encounter locked successfully by physician.');
-        // Automatic redirect timer disabled per user request so report remains open; preserved for test: setTerminationCountdown(6);
-
-        // Automatically dispatch report via Email & SMS if patient contact was provided
-        const patientContact = globalState?.patient_contact || {};
-        const targetEmail = patientContact.email ? patientContact.email.trim() : '';
-        const targetPhone = patientContact.phone ? patientContact.phone.trim() : '';
-
-        if (targetEmail || targetPhone) {
-          setDispatchStatus({ sending: true, message: 'Dispatching clinical report & SMS notification...', error: '' });
-          fetch(`${API_BASE}/api/summary/${sessionId}/send-report`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: targetEmail || null, phone: targetPhone || null })
-          })
-            .then(r => r.json())
-            .then(res => {
-              if (res.status === 'success' || res.summary_message) {
-                setDispatchStatus({ sending: false, message: res.summary_message, error: '' });
-                console.log('[ReportNotifier] Success:', res.summary_message);
-              } else if (res.detail) {
-                const detailMsg = typeof res.detail === 'string' ? res.detail : JSON.stringify(res.detail);
-                setDispatchStatus({ sending: false, message: '', error: `Dispatch Notice: ${detailMsg}` });
-                console.warn('[ReportNotifier] Notice:', detailMsg);
-              } else {
-                setDispatchStatus({ sending: false, message: '', error: 'Dispatch Notice: Unable to send report.' });
-              }
-            })
-            .catch(e => {
-              console.error('[ReportNotifier] Error:', e);
-              setDispatchStatus({ sending: false, message: '', error: `Dispatch Error: ${e.message}` });
-            });
-        }
-      })
-      .catch(err => {
-        console.error("Failed to lock session:", err);
-        setLocking(false);
-      });
+    setShowLockModal(true);
   };
 
-  const handleExport = () => {
-    setExporting(true);
-    fetch(`${API_BASE}/api/summary/${sessionId}/export-fhir`, { method: 'POST' })
-      .then(res => {
-        if (!res.ok) throw new Error("FHIR export failed");
-        return res.json();
-      })
-      .then(d => {
-        const jsonString = JSON.stringify(d, null, 2);
-        setFhirJson(jsonString);
-        setShowFhirPreview(true);
-        
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `FHIR_Bundle_${sessionId.substring(0, 8)}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        
-        setExporting(false);
-      })
-      .catch(err => {
-        console.error("FHIR export failed:", err);
-        setExporting(false);
+  const executeLock = async () => {
+    if (locking) return;
+    setLocking(true);
+    setSummaryError(null);
+    try {
+      const res = await apiFetch(`/api/summary/${sessionId}/lock`, { method: 'POST' });
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(resData.detail || `Failed to lock session (${res.status})`);
+      }
+      if (sessionStorage.getItem('session_id') === sessionId) {
+        sessionStorage.removeItem('session_id');
+      }
+      setShowLockModal(false);
+      await loadSummaryData();
+      console.log('[PhysicianReview] Clinical encounter locked successfully by physician.');
+    } catch (err) {
+      console.error('Failed to lock session:', err);
+      setSummaryError(lang === 'hi'
+        ? `सत्र लॉक करने में विफल: ${err.message}`
+        : `Failed to lock encounter: ${err.message}`);
+    } finally {
+      setLocking(false);
+    }
+  };
+
+  const handleExplicitSendReport = async () => {
+    if (dispatchStatus.sending) return;
+    const patientContact = data?.patient_details || globalState?.patient_contact || {};
+    const targetEmail = patientContact.email ? patientContact.email.trim() : '';
+    const targetPhone = patientContact.phone ? patientContact.phone.trim() : '';
+
+    if (!targetEmail && !targetPhone) {
+      setDispatchStatus({
+        sending: false,
+        message: '',
+        error: lang === 'hi' ? 'कोई संपर्क विवरण (फ़ोन या ईमेल) उपलब्ध नहीं है।' : 'No patient contact (phone or email) available.'
       });
+      return;
+    }
+
+    setDispatchStatus({
+      sending: true,
+      message: lang === 'hi' ? 'मरीज को क्लिनिकल रिपोर्ट भेजी जा रही है...' : 'Dispatching clinical report & SMS notification...',
+      error: ''
+    });
+
+    try {
+      const res = await apiFetch(`/api/summary/${sessionId}/send-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail || null, phone: targetPhone || null })
+      });
+      const resData = await res.json().catch(() => ({}));
+      if (res.ok && (resData.status === 'success' || resData.summary_message)) {
+        setDispatchStatus({ sending: false, message: resData.summary_message || 'Report dispatched successfully.', error: '' });
+      } else {
+        const detailMsg = resData.detail || resData.message || 'Unable to send report.';
+        setDispatchStatus({ sending: false, message: '', error: `Dispatch Notice: ${typeof detailMsg === 'string' ? detailMsg : JSON.stringify(detailMsg)}` });
+      }
+    } catch (e) {
+      console.error('[ReportNotifier] Error:', e);
+      setDispatchStatus({ sending: false, message: '', error: `Dispatch Error: ${e.message}` });
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setSummaryError(null);
+    try {
+      const res = await apiFetch(`/api/summary/${sessionId}/export-fhir`, { method: 'POST' });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `FHIR export failed (${res.status})`);
+      }
+      const d = await res.json();
+      const jsonString = JSON.stringify(d, null, 2);
+      setFhirJson(jsonString);
+      setShowFhirPreview(true);
+      
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `FHIR_Bundle_${sessionId.substring(0, 8)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("FHIR export failed:", err);
+      setSummaryError(lang === 'hi' ? `FHIR निर्यात विफल: ${err.message}` : `FHIR export failed: ${err.message}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handlePrint = () => {
@@ -1254,6 +1316,27 @@ const ClinicalSummary = () => {
       </div>
 
       <div className="max-w-4xl mx-auto relative z-10">
+        {/* Error Alert Banner */}
+        {summaryError && (
+          <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-2xl mb-6 shadow-sm flex items-start justify-between gap-3 animate-in fade-in">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-bold text-rose-900">
+                  {lang === 'hi' ? 'चिकित्सक समीक्षा त्रुटि' : 'Physician Review / Action Error'}
+                </h3>
+                <p className="text-xs text-rose-700 mt-0.5">{summaryError}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSummaryError(null)}
+              className="text-rose-500 hover:text-rose-700 text-sm font-bold px-2 py-0.5 rounded cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Session Termination Notice Banner */}
         {(locked || terminationCountdown !== null) && (
           <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-2xl border-2 border-emerald-500 mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
@@ -1297,7 +1380,19 @@ const ClinicalSummary = () => {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center">
+            <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center flex-wrap">
+              {isPhysicianUser && (
+                <button
+                  type="button"
+                  onClick={handleExplicitSendReport}
+                  disabled={dispatchStatus.sending}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Send report to patient via SMS and Email"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>{dispatchStatus.sending ? (lang === 'hi' ? 'भेज रहे हैं...' : 'Sending...') : (lang === 'hi' ? 'मरीज को भेजें' : 'Send Report')}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleExport}
@@ -1420,14 +1515,25 @@ const ClinicalSummary = () => {
                       )}
                     </div>
                   ) : (
-                    <button 
-                      onClick={handleExport}
-                      disabled={exporting}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                    >
-                      <Download className="w-4 h-4 mr-1.5" />
-                      {exporting ? (lang === 'hi' ? 'निर्यात हो रहा है...' : 'Exporting...') : (lang === 'hi' ? 'FHIR R4 बंडल डाउनलोड' : 'Export FHIR R4 Bundle')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handleExplicitSendReport}
+                        disabled={dispatchStatus.sending}
+                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 cursor-pointer"
+                        title="Send clinical summary to patient via SMS/Email"
+                      >
+                        <Send className="w-4 h-4 mr-1.5" />
+                        {dispatchStatus.sending ? (lang === 'hi' ? 'भेज रहे हैं...' : 'Sending...') : (lang === 'hi' ? 'मरीज को भेजें' : 'Send Report to Patient')}
+                      </button>
+                      <button 
+                        onClick={handleExport}
+                        disabled={exporting}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-bold text-sm flex items-center shadow transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 mr-1.5" />
+                        {exporting ? (lang === 'hi' ? 'निर्यात हो रहा है...' : 'Exporting...') : (lang === 'hi' ? 'FHIR R4 बंडल डाउनलोड' : 'Export FHIR R4 Bundle')}
+                      </button>
+                    </div>
                   )}
                 </>
               ) : (
@@ -2838,6 +2944,70 @@ const ClinicalSummary = () => {
             <FilePlus2 className="w-5 h-5 mr-2" /> 
             {lang === 'hi' ? 'दस्तावेज़ जोड़ें' : 'Upload More Documents'}
           </button>
+        </div>
+      )}
+
+      {/* Lock Confirmation Modal */}
+      {showLockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-amber-600 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {lang === 'hi' ? 'क्लिनिकल सत्र लॉक करने की पुष्टि करें' : 'Confirm & Lock Clinical Encounter'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {lang === 'hi' ? 'सत्र आईडी:' : 'Session ID:'} {sessionId}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 mb-5">
+              <p className="text-xs font-semibold text-amber-900 leading-relaxed">
+                {lang === 'hi'
+                  ? 'चेतावनी: क्लिनिकल सत्र को लॉक करने से यह रिकॉर्ड स्थायी रूप से फ्रीज हो जाएगा। इसके बाद किसी भी अनुभाग में संशोधन नहीं किया जा सकेगा और यह रिकॉर्ड ABDM FHIR एक्सपोर्ट एवं सत्यापन हेतु अधिकृत हो जाएगा।'
+                  : 'Caution: Locking permanently freezes the clinical record, locks out further edits, and marks the encounter verified for ABDM/FHIR export. Once locked, this record cannot be modified.'}
+              </p>
+            </div>
+
+            <div className="space-y-2 mb-6 text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{lang === 'hi' ? 'सभी 9 क्लिनिकल अनुभागों की समीक्षा पूरी हो चुकी है' : 'All 9 clinical intake domains verified'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{lang === 'hi' ? 'चिकित्सक डिजिटल हस्ताक्षर एवं टाइमस्टैम्प लागू किया जाएगा' : 'Physician signature & audit timestamp attached'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>{lang === 'hi' ? 'रिकॉर्ड केवल-पढ़ने योग्य स्थिति में परिवर्तित हो जाएगा' : 'Record converted to permanent read-only state'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowLockModal(false)}
+                disabled={locking}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                {lang === 'hi' ? 'रद्द करें' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={executeLock}
+                disabled={locking}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                {locking ? (lang === 'hi' ? 'लॉकिंग...' : 'Locking...') : (lang === 'hi' ? 'हाँ, स्थायी रूप से लॉक करें' : 'Yes, Permanently Lock')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

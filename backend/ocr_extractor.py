@@ -1,11 +1,11 @@
-import re
+import asyncio
 import difflib
 import io
 import json
 import logging
-import asyncio
+import re
 import sys
-from typing import Tuple, Dict, Any, List, Optional
+from typing import Any, Dict, Tuple
 
 logger = logging.getLogger("ocr_extractor")
 
@@ -61,13 +61,13 @@ def check_value_in_range(test_name: str, value_str: str) -> str:
         if not match:
             return "Normal"
         val = float(match.group(1))
-        
+
         # Look up best matching reference range
         closest = difflib.get_close_matches(test_name, REFERENCE_RANGES.keys(), n=1, cutoff=0.6)
         if not closest:
             return "Normal"
         ref = REFERENCE_RANGES[closest[0]]
-        
+
         if val < ref["min"]:
             return f"Below range (min: {ref['min']} {ref.get('unit', '')})".strip()
         elif val > ref["max"]:
@@ -97,7 +97,7 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
                 txt = page.extract_text()
                 if txt and txt.strip():
                     pages_text.append(txt.strip())
-            
+
             extracted_pdf_text = "\n\n".join(pages_text).strip()
             if len(extracted_pdf_text) > 15:
                 logger.info(f"Extracted {len(extracted_pdf_text)} characters from PDF stream.")
@@ -129,7 +129,7 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
         image = Image.open(io.BytesIO(content))
         if image.mode != 'RGB':
             image = image.convert('RGB')
-        
+
         # Preprocess: If resolution is small (<1200px width), upscale 2x and enhance contrast for sharp OCR
         w, h = image.size
         if w < 1200:
@@ -137,7 +137,7 @@ async def extract_raw_text(content: bytes, filename: str = "") -> str:
             image = image.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
             enhancer = ImageEnhance.Contrast(image)
             image = enhancer.enhance(1.4)
-        
+
         ocr_result = await _ocr_image(image)
         if ocr_result:
             logger.info(f"OCR extracted {len(ocr_result)} characters from image.")
@@ -162,12 +162,13 @@ async def extract_entities_with_llm(raw_text: str) -> Dict[str, Any]:
     Guarantees that unmentioned medications (e.g. Paracetamol) are NEVER fabricated.
     """
     import os
+
     from openai import OpenAI
 
     api_key = (
-        os.getenv("GROQ_API_KEY") 
-        or os.getenv("GROK_API_KEY") 
-        or os.getenv("OPENAI_API_KEY") 
+        os.getenv("GROQ_API_KEY")
+        or os.getenv("GROK_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
         or ""
     ).strip()
     base_url = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
@@ -215,14 +216,14 @@ Document Text:
             temperature=0.0
         )
         content_text = resp.choices[0].message.content.strip()
-        
+
         # Remove any Markdown code block wrapping if present
         if content_text.startswith("```"):
             content_text = re.sub(r'^```(?:json)?\s*', '', content_text)
             content_text = re.sub(r'\s*```$', '', content_text)
-            
+
         data = json.loads(content_text.strip())
-        
+
         parsed = {
             "dates": data.get("dates", []),
             "medications": data.get("medications", []),
@@ -255,7 +256,7 @@ Document Text:
                 if close:
                     test_name = key_map[close[0]]
                     lab["test"] = test_name
-                
+
                 val = str(lab.get("value", "")).strip()
                 # If HbA1c value was captured without decimal point (e.g. 82% from HbA1e82%), normalize to 8.2%
                 if test_name == "HbA1c":
@@ -303,7 +304,7 @@ def extract_entities_with_regex(raw_text: str) -> Dict[str, Any]:
     processed_text = re.sub(r'([\|\-\%])', r' \1 ', raw_text)
     processed_text = re.sub(r'(?<=[a-zA-Z])(?=\d)', ' ', processed_text)
     processed_text = re.sub(r'(?<=\d)(?=[a-zA-Z])', ' ', processed_text)
-    
+
     key_map = {k.lower(): k for k in REFERENCE_RANGES.keys()}
     lines = processed_text.split('\n')
     for line in lines:
@@ -315,14 +316,14 @@ def extract_entities_with_regex(raw_text: str) -> Dict[str, Any]:
                 test_name = key_map[matches[0]]
                 lookahead = words[i+1:i+5]
                 clean_lookahead = [w for w in lookahead if w not in ['|', '-', ':', '=']]
-                
+
                 number_match = None
                 for candidate in clean_lookahead:
                     match = re.search(r'(\d+(?:\.\d+)?)', candidate)
                     if match:
                         number_match = match.group(1)
                         break
-                
+
                 if number_match:
                     flag = check_value_in_range(test_name, number_match)
                     confidence = "high" if word.lower() == test_name.lower() else "medium"
@@ -356,7 +357,7 @@ def extract_entities_with_regex(raw_text: str) -> Dict[str, Any]:
                 med_name = " ".join(med_words[-2:]) if len(med_words) > 1 else med_words[-1]
                 med_name = re.sub(r'[^a-zA-Z0-9\s]', '', med_name).strip()
                 if (
-                    med_name.lower() not in ['rx', 'the', 'and', 'with', 'patient', 'date', 'clinic', 'medications', 'tab', 'cap', 'syp', 'inj'] 
+                    med_name.lower() not in ['rx', 'the', 'and', 'with', 'patient', 'date', 'clinic', 'medications', 'tab', 'cap', 'syp', 'inj']
                     and not any(test.lower() in med_name.lower() for test in REFERENCE_RANGES.keys())
                     and len(med_name) > 2
                 ):
@@ -408,7 +409,7 @@ def extract_entities_with_regex(raw_text: str) -> Dict[str, Any]:
                     "confidence": "high"
                 })
                 extracted_diagnoses.add(dx_text.lower())
-        
+
         adv_match = re.search(r'^(?:advice|plan|instructions?|rx advice)\s*[:\-]\s*(.+)$', line_clean, re.IGNORECASE)
         if adv_match:
             adv_text = adv_match.group(1).strip()
@@ -443,7 +444,7 @@ async def extract_document_data(content: bytes, filename: str = "") -> Tuple[str
             "diagnoses": [],
             "doctor_notes": []
         }
-    
+
     parsed_data = await extract_entities_with_llm(raw_text)
     return raw_text, parsed_data
 

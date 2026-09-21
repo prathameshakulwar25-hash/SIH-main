@@ -1,33 +1,20 @@
+import logging
 import os
 import re
-import json
-import logging
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, Optional, Tuple
+
 import httpx
 
 logger = logging.getLogger("report_notifier")
 logging.basicConfig(level=logging.INFO)
 
-# ── Load environment variables from .env if present ──
-from dotenv import load_dotenv as py_load_dotenv
+# ── Configuration settings ──
+from config import settings
 
-def init_env():
-    env_paths = [
-        os.path.join(os.path.dirname(__file__), ".env"),
-        os.path.join(os.path.dirname(__file__), "..", ".env"),
-        ".env"
-    ]
-    for p in env_paths:
-        if os.path.exists(p):
-            py_load_dotenv(p, override=False)
-            break
-    py_load_dotenv()
-
-init_env()
 
 # ── Validation helpers ──
 def is_valid_email(email: Optional[str]) -> bool:
@@ -56,7 +43,7 @@ def generate_clinical_html_report(data: Dict[str, Any]) -> str:
     abha_id = data.get("abha_id") or patient_details.get("abha_id") or "Not provided"
     created_at = data.get("created_at") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     locked = data.get("locked", False)
-    
+
     patient_name = data.get("patient_name") or patient_details.get("name") or "Ayushman Patient"
     gender = patient_details.get("gender") or "Not Specified"
     gender_full = "Male" if gender == "M" else ("Female" if gender == "F" else gender)
@@ -66,23 +53,22 @@ def generate_clinical_html_report(data: Dict[str, Any]) -> str:
     phone = patient_details.get("phone") or "Not Provided"
     email = patient_details.get("email") or "Not Provided"
     abha_address = patient_details.get("abha_address") or (f"{abha_id}@abdm" if "@" not in abha_id else abha_id)
-    
+
     from grok_service import normalize_clinical_complaint
     intake = data.get("intake_triage") or {}
     raw_type = intake.get("type") or "Acute Clinical Consultation"
     intake_type = normalize_clinical_complaint(raw_type)
     intake_summary = intake.get("summary") or {}
     intake_flags = intake.get("flags") or []
-    
+
     ayush = data.get("ayush_profile") or {}
     prakriti = ayush.get("prakriti") or "Not assessed"
     agni = ayush.get("agni") or "Not assessed"
     koshtha = ayush.get("koshtha") or "Not assessed"
-    
+
     docs = data.get("documents") or {}
     meds = docs.get("medications") or []
     labs = docs.get("labs") or []
-    doc_items = docs.get("items") or []
 
     # Format flags
     flags_html = ""
@@ -105,7 +91,12 @@ def generate_clinical_html_report(data: Dict[str, Any]) -> str:
     # Format labs
     labs_html = "<p style='color:#64748b;font-style:italic;'>No lab investigations uploaded.</p>"
     if labs:
-        lab_rows = "".join([f"<li style='margin-bottom:6px;'><strong>{l.get('test_name', 'Lab')}</strong>: {l.get('value', '')} {l.get('unit', '')} {f'({l.get('flag', '')})' if l.get('flag') else ''}</li>" for l in labs if isinstance(l, dict)])
+        lab_items = []
+        for lab in labs:
+            if isinstance(lab, dict):
+                flag_str = f" ({lab.get('flag', '')})" if lab.get("flag") else ""
+                lab_items.append(f"<li style='margin-bottom:6px;'><strong>{lab.get('test_name', 'Lab')}</strong>: {lab.get('value', '')} {lab.get('unit', '')}{flag_str}</li>")
+        lab_rows = "".join(lab_items)
         if lab_rows:
             labs_html = f"<ul style='margin:6px 0 0 18px;padding:0;color:#1e293b;'>{lab_rows}</ul>"
 
@@ -121,7 +112,7 @@ def generate_clinical_html_report(data: Dict[str, Any]) -> str:
     </head>
     <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#1e293b;background-color:#f8fafc;margin:0;padding:20px;">
         <div style="max-width:700px;margin:0 auto;background-color:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
-            
+
             <!-- Header -->
             <div style="background:linear-gradient(135deg,#0d9488,#0f766e);color:#ffffff;padding:24px 30px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -220,8 +211,8 @@ def generate_clinical_html_report(data: Dict[str, Any]) -> str:
 
 # ── Email Delivery Implementations ──
 def send_email_sendgrid(to_email: str, subject: str, html_content: str) -> Tuple[bool, str]:
-    api_key = os.environ.get("SENDGRID_API_KEY")
-    from_email = os.environ.get("SENDGRID_FROM_EMAIL") or os.environ.get("SENDER_EMAIL") or "reports@jeevanopd.in"
+    api_key = settings.SENDGRID_API_KEY
+    from_email = settings.SENDGRID_FROM_EMAIL or "reports@jeevanopd.in"
     if not api_key:
         return False, "SENDGRID_API_KEY not configured"
 
@@ -249,7 +240,7 @@ def send_email_sendgrid(to_email: str, subject: str, html_content: str) -> Tuple
         return False, f"SendGrid request failed: {str(e)}"
 
 def send_email_ses(to_email: str, subject: str, html_content: str) -> Tuple[bool, str]:
-    from_email = os.environ.get("SES_FROM_EMAIL") or os.environ.get("SENDER_EMAIL")
+    from_email = settings.SES_FROM_EMAIL
     region = os.environ.get("AWS_REGION", "ap-south-1")
     if not from_email:
         return False, "SES_FROM_EMAIL not configured"
@@ -259,8 +250,8 @@ def send_email_ses(to_email: str, subject: str, html_content: str) -> Tuple[bool
         client = boto3.client(
             "ses",
             region_name=region,
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY")
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
         response = client.send_email(
             Source=from_email,
@@ -277,11 +268,11 @@ def send_email_ses(to_email: str, subject: str, html_content: str) -> Tuple[bool
         return False, f"AWS SES error: {str(e)}"
 
 def send_email_smtp(to_email: str, subject: str, html_content: str) -> Tuple[bool, str]:
-    host = os.environ.get("SMTP_HOST")
-    port = int(os.environ.get("SMTP_PORT", 587))
-    user = os.environ.get("SMTP_USERNAME")
-    password = os.environ.get("SMTP_PASSWORD")
-    from_email = os.environ.get("SMTP_FROM_EMAIL") or user or "reports@jeevanopd.in"
+    host = settings.SMTP_HOST
+    port = settings.SMTP_PORT
+    user = settings.SMTP_USER
+    password = settings.SMTP_PASSWORD
+    from_email = settings.SES_FROM_EMAIL or user or "reports@jeevanopd.in"
 
     if not host or not user or not password:
         return False, "SMTP settings not fully configured"
@@ -308,17 +299,17 @@ def send_email_dispatcher(to_email: str, subject: str, html_content: str) -> Dic
         return {"sent": False, "provider": "none", "error": f"Invalid email format: {to_email}"}
 
     # 1. Try SendGrid
-    if os.environ.get("SENDGRID_API_KEY"):
+    if settings.SENDGRID_API_KEY:
         ok, detail = send_email_sendgrid(to_email, subject, html_content)
         return {"sent": ok, "provider": "sendgrid", "detail": detail}
 
     # 2. Try AWS SES
-    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("SES_FROM_EMAIL"):
+    if settings.AWS_ACCESS_KEY_ID and settings.SES_FROM_EMAIL:
         ok, detail = send_email_ses(to_email, subject, html_content)
         return {"sent": ok, "provider": "aws_ses", "detail": detail}
 
     # 3. Try SMTP
-    if os.environ.get("SMTP_HOST"):
+    if settings.SMTP_HOST:
         ok, detail = send_email_smtp(to_email, subject, html_content)
         return {"sent": ok, "provider": "smtp", "detail": detail}
 
@@ -333,9 +324,9 @@ def send_email_dispatcher(to_email: str, subject: str, html_content: str) -> Dic
 
 # ── SMS Delivery Implementations ──
 def send_sms_twilio(to_phone: str, message_body: str) -> Tuple[bool, str]:
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = os.environ.get("TWILIO_PHONE_NUMBER") or os.environ.get("TWILIO_FROM_NUMBER")
+    account_sid = settings.TWILIO_ACCOUNT_SID
+    auth_token = settings.TWILIO_AUTH_TOKEN
+    from_number = settings.TWILIO_PHONE_NUMBER
 
     if not account_sid or not auth_token or not from_number:
         return False, "Twilio credentials (SID, Token, From Number) not configured"
@@ -344,7 +335,6 @@ def send_sms_twilio(to_phone: str, message_body: str) -> Tuple[bool, str]:
     e164_from = format_phone_e164(from_number) if not from_number.startswith("+") else from_number
 
     # In Twilio, the endpoint requires Account SID (starts with AC...)
-    # If using an API Key (starts with SK...), TWILIO_MAIN_ACCOUNT_SID is the parent AC... account
     main_account_sid = os.environ.get("TWILIO_MAIN_ACCOUNT_SID") or account_sid
     if main_account_sid.startswith("SK") and not os.environ.get("TWILIO_MAIN_ACCOUNT_SID"):
         return False, (
@@ -355,8 +345,8 @@ def send_sms_twilio(to_phone: str, message_body: str) -> Tuple[bool, str]:
     url = f"https://api.twilio.com/2010-04-01/Accounts/{main_account_sid}/Messages.json"
 
     data = {"From": e164_from, "To": e164_to, "Body": message_body}
-    if os.environ.get("TWILIO_TEMPLATE_NAME"):
-        data["TemplateName"] = os.environ.get("TWILIO_TEMPLATE_NAME")
+    if settings.TWILIO_TEMPLATE_NAME:
+        data["TemplateName"] = settings.TWILIO_TEMPLATE_NAME
 
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -367,7 +357,7 @@ def send_sms_twilio(to_phone: str, message_body: str) -> Tuple[bool, str]:
             )
             if resp.status_code in (200, 201):
                 return True, f"Sent via Twilio (Status {resp.status_code})"
-            
+
             resp_data = {}
             try:
                 resp_data = resp.json()
@@ -391,8 +381,8 @@ def send_sms_twilio(to_phone: str, message_body: str) -> Tuple[bool, str]:
         return False, f"Twilio request failed: {str(e)}"
 
 def send_sms_msg91(to_phone: str, message_body: str) -> Tuple[bool, str]:
-    auth_key = os.environ.get("MSG91_AUTH_KEY")
-    sender_id = os.environ.get("MSG91_SENDER_ID", "JEEVAN")
+    auth_key = settings.MSG91_AUTH_KEY
+    sender_id = settings.MSG91_SENDER_ID or "JEEVAN"
 
     if not auth_key:
         return False, "MSG91_AUTH_KEY not configured"
@@ -404,7 +394,7 @@ def send_sms_msg91(to_phone: str, message_body: str) -> Tuple[bool, str]:
     # Extract 4 to 6 digit OTP if present in message body
     otp_match = re.search(r'\b(\d{4,6})\b', message_body)
     otp_code = otp_match.group(1) if otp_match else None
-    template_id = os.environ.get("MSG91_TEMPLATE_ID")
+    template_id = settings.MSG91_OTP_TEMPLATE_ID
 
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -419,7 +409,7 @@ def send_sms_msg91(to_phone: str, message_body: str) -> Tuple[bool, str]:
                 }
                 if template_id:
                     params["template_id"] = template_id
-                
+
                 resp = client.post(
                     otp_url,
                     headers={"authkey": auth_key, "content-type": "application/json"},
@@ -464,12 +454,12 @@ def send_sms_dispatcher(to_phone: str, message_body: str) -> Dict[str, Any]:
         return {"sent": False, "provider": "none", "error": f"Invalid 10-digit Indian phone number: {to_phone}"}
 
     # 1. Try Twilio
-    if os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"):
+    if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
         ok, detail = send_sms_twilio(to_phone, message_body)
         return {"sent": ok, "provider": "twilio", "detail": detail}
 
     # 2. Try MSG91
-    if os.environ.get("MSG91_AUTH_KEY"):
+    if settings.MSG91_AUTH_KEY:
         ok, detail = send_sms_msg91(to_phone, message_body)
         return {"sent": ok, "provider": "msg91", "detail": detail}
 
@@ -489,7 +479,6 @@ def dispatch_clinical_report(
     email: Optional[str] = None,
     phone: Optional[str] = None
 ) -> Dict[str, Any]:
-    init_env()
     results = {
         "status": "success",
         "session_id": session_id,

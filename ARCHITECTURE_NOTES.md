@@ -1,18 +1,22 @@
 # Architecture Notes
 
 ## Stack Summary
-- **Backend:** FastAPI (Python), SQLAlchemy, SQLite, `fhir.resources` (Pydantic-based FHIR validation)
+- **Backend:** FastAPI (Python), SQLAlchemy, PostgreSQL (Production) / SQLite (Local Dev), `fhir.resources` (Pydantic-based FHIR validation)
 - **Frontend:** React, Tailwind CSS, Lucide React (Icons), `react-router-dom`
-- **Data Persistence:** SQLite (relational storage for session tracking, consent, and modular intake records).
-- **Session Management:** Client-side `sessionStorage` driving a backend unified `session_id`.
+- **Data Persistence:** Dual Database Modes:
+  - **Production Mode (`ENV_MODE=production`):** Strict PostgreSQL connection (Supabase / AWS RDS / Neon). If the connection fails or `DATABASE_URL` is absent, the server fails fast on startup to prevent silent data bifurcation.
+  - **Development Mode (`ENV_MODE=development`):** Local SQLite (`data/ayush.db`) fallback for rapid zero-dependency offline development.
+- **Session & Auth Management:** Client-side `sessionStorage` driving a unified encounter `session_id`, combined with role-based JWT authentication (`HTTPBearer`) with 2FA OTP verification for attending physicians.
 
-## Design Decisions (Hackathon Context)
+## Design Decisions
 
-**1. SQLite over PostgreSQL:**
-Given the rapid iteration requirements of a hackathon, SQLite was chosen for zero-dependency local setup. The schema is entirely relational and maps cleanly to a future Postgres migration.
+**1. Dual Database Strategy (PostgreSQL in Production vs. SQLite in Local Development):**
+The platform supports two explicit database operational modes:
+- **Production Mode:** Requires a live PostgreSQL database via `DATABASE_URL`. Startup checks verify the connection with `SELECT 1`. Connection failures immediately halt server startup, ensuring clinical records are never written to an unintended local database.
+- **Development Mode:** Provides automatic fallback to SQLite (`data/ayush.db`) when a remote PostgreSQL instance is not configured, enabling complete offline development and hackathon demonstration.
 
-**2. SessionStorage over JWT / Auth:**
-Tab-isolation was a key requirement (e.g., a receptionist handling two walk-ins on one device). We utilized HTML5 `sessionStorage` instead of `localStorage` or cookies to guarantee that session IDs are strictly isolated per-tab and wiped instantly upon closing the tab or abandoning the visit.
+**2. Physician Role-Based Authentication & Session Lock Gating:**
+Physician actions (encounter locking, section approvals, clinical notes, criticality, and summary amendments) enforce JWT authentication with the `physician` role. The `physician_id` identity is derived strictly from the verified JWT `sub` claim and never trusted from client-supplied request bodies. Draft sessions cannot be exported as ABDM FHIR bundles until explicitly locked by an authenticated physician.
 
 **3. Simulated ABHA & HIS Push:**
 We implemented a strict API gateway (`ensure_consent_granted`) to simulate the ABHA consent flow. Real ABDM Sandbox integration requires complex cryptographic keys and webhook endpoints. Similarly, the FHIR bundle is fully generated, validated against standard HL7 schemas, and printed to stdout, simulating a HIS push without requiring a live Epic/Cerner sandbox.

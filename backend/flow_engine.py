@@ -15,8 +15,7 @@ This guarantees:
 """
 import json
 import os
-import re
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 # Load the flow definition once at module load
 _FLOW_PATH = os.path.join(os.path.dirname(__file__), "intake_flow.json")
@@ -281,7 +280,6 @@ ACKNOWLEDGEMENTS = {
     ],
 }
 
-import random
 
 def get_acknowledgement(language: str, step_index: int) -> str:
     phrases = ACKNOWLEDGEMENTS.get(language, ACKNOWLEDGEMENTS["en"])

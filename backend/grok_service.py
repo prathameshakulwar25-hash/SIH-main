@@ -1,22 +1,17 @@
-import os
 import json
 import logging
-from typing import Dict, Any, List, Optional
-from dotenv import load_dotenv
-import httpx
-from flow_engine import get_step_meta
+from typing import Any, Dict, List, Optional
 
-# Load environment variables from backend/.env
-dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path)
-load_dotenv()
+import httpx
+
+from config import settings
 
 logger = logging.getLogger("grok_service")
 logging.basicConfig(level=logging.INFO)
 
 # Default xAI / Groq API configurations
-XAI_API_BASE = os.getenv("XAI_API_BASE", "https://api.x.ai/v1")
-DEFAULT_GROK_MODEL = os.getenv("GROK_MODEL", "openai/gpt-oss-120b")
+XAI_API_BASE = settings.XAI_API_BASE
+DEFAULT_GROK_MODEL = settings.GROK_MODEL
 
 
 def normalize_clinical_complaint(raw_text: str) -> str:
@@ -27,7 +22,7 @@ def normalize_clinical_complaint(raw_text: str) -> str:
     """
     if not raw_text:
         return "Acute Clinical Consultation"
-    
+
     t = str(raw_text).strip()
     clean_known = {
         "headache": "Headache / Cephalea",
@@ -54,33 +49,33 @@ def normalize_clinical_complaint(raw_text: str) -> str:
         (any(h in lower_t for h in ["sar", "sir", "matha", "mathe", "head", "doke"]) and any(p in lower_t for p in ["dard", "pain", "ache", "dukh", "bhari", "ghum", "dukhat"]))
     ):
         return "Headache / Cephalea"
-    
+
     # Abdominal / Gastric / Colic
     if (
         any(k in lower_t for k in ["stomach", "abdomen", "abdominal", "पोट", "पोटात", "पेट", "gas", "acidity", "indigestion", "colic", "belly", "kabz", "constipat", "loose"]) or
         ("pet" in lower_t and any(p in lower_t for p in ["dard", "kharab", "pain", "ache", "dukh", "gadbad", "marod", "me"]))
     ):
         return "Acute Abdominal Discomfort"
-        
+
     # Chest pain / Precordial / Angina
     if (
         any(k in lower_t for k in ["chest", "chhati", "seene", "सीना", "छाती", "heart", "angina", "cardiac"]) or
         (any(c in lower_t for c in ["chhati", "seene", "chest"]) and any(p in lower_t for p in ["dard", "pain", "pressure", "jalan"]))
     ):
         return "Precordial Chest Pain"
-        
+
     # Fever / Pyrexia / Chills
     if any(k in lower_t for k in ["bukhar", "fever", "tap", "ताप", "बुखार", "temperature", "chills", "febrile", "kapkapi", "pyrexia"]):
         return "Pyrexia / Febrile Illness"
-        
+
     # Dizziness / Vertigo / Presyncope
     if any(k in lower_t for k in ["chakkar", "dizzy", "dizziness", "vertigo", "चक्कर", "faint", "presyncope", "behoshi", "sir ghum", "sar ghum"]):
         return "Acute Vertigo / Presyncope"
-        
+
     # Respiratory / Cough / Dyspnea
     if any(k in lower_t for k in ["cough", "khansi", "khasi", "खोखला", "खोकला", "खांसी", "saans", "shwas", "breath", "dyspnea", "asthma", "gala"]):
         return "Respiratory Symptoms / Dyspnea"
-        
+
     # Nausea / Vomiting
     if any(k in lower_t for k in ["ulti", "vomit", "nausea", "मळमळ", "उल्टी", "ghabra", "jee machal"]):
         return "Nausea & Emesis"
@@ -92,20 +87,20 @@ def normalize_clinical_complaint(raw_text: str) -> str:
     # Body ache / Joint pain / Myalgia
     if any(k in lower_t for k in ["badan dard", "body ache", "joint", "gathiya", "sandhivata", "हाथ पैर", "सांधे", "myalgia", "kamar dard", "back pain"]):
         return "Generalized Myalgia / Arthralgia"
-        
+
     # Fatigue / Weakness / Asthenia
     if any(k in lower_t for k in ["kamzori", "weakness", "fatigue", "tired", "थकवा", "कमजोरी"]):
         return "Asthenia / Generalized Fatigue"
-        
+
     # Skin / Dermatological / Rash
     if any(k in lower_t for k in ["khujli", "rash", "allergy", "खाज", "त्वचा", "pruritus"]):
         return "Cutaneous Dermatosis / Pruritus"
-        
+
     # If the text is short and doesn't contain conversational/slang words, clean it
     casual_words = ["bhai", "yaar", "kr rha", "kar raha", "ho rha", "hai", "kuch", "bahut", "me", "mera", "meri", "aa rha", "lag rha", "dost", "plz", "please"]
     if len(t) < 40 and not any(casual in lower_t for casual in casual_words):
         return t.replace("-", " ").title()
-        
+
     return "Acute Clinical Consultation"
 
 
@@ -328,28 +323,22 @@ Given the patient's complete encounter record (Consent, Chief Complaint, SOCRATE
 
 class GrokService:
     def __init__(self):
-        self.api_key = (
-            os.getenv("GROQ_API_KEY")
-            or os.getenv("GROK_API_KEY")
-            or os.getenv("XAI_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-            or ""
-        ).strip()
-        
+        self.api_key = settings.GROQ_API_KEY or settings.GROK_API_KEY
+
         # Auto-detect provider based on key prefix or explicit env
-        if self.api_key.startswith("gsk_") or os.getenv("GROQ_API_KEY"):
+        if self.api_key.startswith("gsk_") or settings.GROQ_API_KEY:
             self.provider = "Groq"
-            self.api_base = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1").rstrip("/")
-            self.model = os.getenv("GROQ_MODEL") or os.getenv("GROK_MODEL") or "openai/gpt-oss-120b"
-        elif self.api_key.startswith("xai-") or os.getenv("XAI_API_KEY"):
+            self.api_base = settings.GROQ_API_BASE.rstrip("/")
+            self.model = settings.GROQ_MODEL or settings.GROK_MODEL
+        elif self.api_key.startswith("xai-"):
             self.provider = "xAI Grok"
-            self.api_base = os.getenv("XAI_API_BASE", "https://api.x.ai/v1").rstrip("/")
-            self.model = os.getenv("GROK_MODEL") or "grok-3"
+            self.api_base = settings.XAI_API_BASE.rstrip("/")
+            self.model = settings.GROK_MODEL or "grok-3"
         else:
-            self.provider = "Groq" if os.getenv("GROQ_API_BASE") else ("xAI Grok" if os.getenv("XAI_API_BASE") else "OpenAI-Compatible")
-            self.api_base = os.getenv("GROQ_API_BASE") or os.getenv("XAI_API_BASE") or "https://api.groq.com/openai/v1"
-            self.model = os.getenv("GROK_MODEL") or os.getenv("GROQ_MODEL") or "openai/gpt-oss-120b"
-            
+            self.provider = "Groq"
+            self.api_base = settings.GROQ_API_BASE.rstrip("/")
+            self.model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
+
         self.default_system_prompt = SYSTEM_PROMPT_CLINICAL_INTAKE
 
     def is_configured(self) -> bool:
@@ -522,8 +511,8 @@ class GrokService:
         }
 
     async def generate_clinician_summary(
-        self, 
-        history: List[Dict[str, str]], 
+        self,
+        history: List[Dict[str, str]],
         extracted_documents: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -533,10 +522,10 @@ class GrokService:
         Parses the criticality JSON block appended at the end.
         """
         filtered_history = [
-            m for m in history 
+            m for m in history
             if not ("[INTAKE_COMPLETE]" in m.get("content", "") and m.get("role") == "assistant")
         ]
-        
+
         doc_context = ""
         if extracted_documents:
             meds = extracted_documents.get("medications", [])
@@ -555,7 +544,7 @@ class GrokService:
                 parts.append(f"- Extracted Diagnostic Labs: {', '.join(lab_items)}")
             if notes:
                 parts.append(f"- Previous Doctor / Clinical Advice: {', '.join(str(n) for n in notes)}")
-            
+
             if parts:
                 doc_context = (
                     "\n\n📄 [EXTRACTED PAST MEDICAL RECORDS & PRESCRIPTIONS]:\n" +
@@ -565,7 +554,7 @@ class GrokService:
                     "\n2. In Section 5 (Current Medications), explicitly list the EXACT medications and dosages extracted above. DO NOT add any unmentioned medications (such as Paracetamol) unless they appear in this list." +
                     "\n3. In Section 8 (Integrative Management), explicitly correlate recommendations with these extracted laboratory findings."
                 )
-        
+
         user_prompt = (
             "Please synthesize the complete encounter conversation into the English-only Clinical Report with Dashavidha Pariksha. "
             "CRITICAL: The entire output must be written in English. Start with [INTAKE_COMPLETE] and conclude with the criticality JSON block."
@@ -669,7 +658,7 @@ class GrokService:
         Deep clinical OCR & drug-drug interaction analysis.
         """
         user_prompt = f"""Please analyze the following extracted medical document text (Prescription/Lab/Discharge):
-        
+
 Filename: {filename or 'medical_doc.jpg'}
 --- RAW TEXT START ---
 {raw_text}
@@ -684,7 +673,7 @@ Please provide:
 """
         messages = [{"role": "user", "content": user_prompt}]
         analysis_text = await self.call_grok(SYSTEM_PROMPT_DOCUMENT_INTELLIGENCE, messages, temperature=0.2, max_tokens=1500)
-        
+
         return {
             "analysis": analysis_text,
             "raw_text": raw_text,
@@ -709,7 +698,7 @@ Please generate a comprehensive, personalized AYUSH guidance report with:
 """
         messages = [{"role": "user", "content": user_prompt}]
         insights_text = await self.call_grok(SYSTEM_PROMPT_AYUSH_SYNTHESIS, messages, temperature=0.3, max_tokens=1500)
-        
+
         return {
             "insights": insights_text,
             "prakriti": prakriti,
@@ -739,7 +728,7 @@ Please structure the output as follows:
 """
         messages = [{"role": "user", "content": user_prompt}]
         synthesis_text = await self.call_grok(SYSTEM_PROMPT_CLINICAL_CO_PILOT, messages, temperature=0.2, max_tokens=2000)
-        
+
         return {
             "clinical_synthesis": synthesis_text,
             "session_id": encounter_data.get("session_id"),
@@ -822,7 +811,7 @@ Please structure the output as follows:
             first_user_msg = user_messages[0] if user_messages else "Acute clinical symptoms evaluated during intake."
             primary_complaint = normalize_clinical_complaint(first_user_msg)
             hpi_notes = f"Acute symptom evolution characterized by {primary_complaint.lower()} with progressive discomfort documented during anamnesis."
-            
+
             # Detect emergency keywords
             is_emerg = any(w in conversation_text for w in ["chest pain", "jaw", "crushing", "breathless", "faint", "stroke", "paralysis", "खून", "attack"])
             urg_val = "emergency" if is_emerg else "routine"
@@ -1009,9 +998,9 @@ Please structure the output as follows:
             for candidate in ["amoxicillin", "ibuprofen", "lisinopril", "pantocid", "pantoprazole", "warfarin", "aspirin", "atorvastatin", "metformin", "cetirizine"]:
                 if candidate in combined_msg.lower():
                     found_meds.append(candidate.capitalize())
-            
+
             meds_section = "\n".join(f"   - **{med}**: As prescribed in clinical record." for med in found_meds) if found_meds else "   - No active routine medications identified in document."
-            
+
             return f"""### 📋 Prescription & Lab Intelligence Analysis
 
 1. **Extracted Medications**:

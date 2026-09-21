@@ -1,4 +1,4 @@
-﻿# Environment variables and secrets (CRITICAL)
+# Environment variables and secrets (CRITICAL)
 .env
 .env.*
 !.env.example
@@ -45,3 +45,4 @@ Thumbs.db
 # Agent & Temporary Logs
 .system_generated/
 *.log
+brag-output/

@@ -342,16 +342,19 @@ const PhysicianDashboard = () => {
     };
     setReviewSteps(updatedSteps);
     try {
-      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
+      const res = await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          physician_id: 'physician-1',
           review_steps: updatedSteps
         })
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Could not persist review step.');
+      }
     } catch (err) {
-      console.warn('Could not persist review step:', err);
+      setError(err.message || 'Could not persist review step.');
     }
   };
 
@@ -371,14 +374,17 @@ const PhysicianDashboard = () => {
     });
     setReviewSteps(updatedSteps);
     try {
-      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
+      const res = await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          physician_id: 'physician-1',
           review_steps: updatedSteps
         })
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to approve review steps.');
+      }
       setReportSuccessMsg('All 9 clinical review steps successfully verified & approved.');
       setTimeout(() => setReportSuccessMsg(''), 4000);
     } catch (err) {
@@ -392,10 +398,14 @@ const PhysicianDashboard = () => {
     if (!selectedId) return;
     setVerifying(true);
     try {
-      await apiFetch(`/api/physician/reports/${selectedId}/verify`, {
+      const res = await apiFetch(`/api/physician/reports/${selectedId}/verify`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ physician_id: 'physician-1', notes }),
+        body: JSON.stringify({ notes }),
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to verify report.');
+      }
       await fetchDetail(selectedId);
       await fetchReports();
     } catch { setError('Failed to verify report.'); }
@@ -406,11 +416,15 @@ const PhysicianDashboard = () => {
     if (!selectedId) return;
     setSavingNotes(true);
     try {
-      await apiFetch(`/api/physician/reports/${selectedId}/notes`, {
+      const res = await apiFetch(`/api/physician/reports/${selectedId}/notes`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ physician_id: 'physician-1', notes }),
+        body: JSON.stringify({ notes }),
       });
-    } catch { setError('Failed to save notes.'); }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to save notes.');
+      }
+    } catch (err) { setError(err.message || 'Failed to save notes.'); }
     finally { setSavingNotes(false); }
   };
 
@@ -453,22 +467,28 @@ const PhysicianDashboard = () => {
     setEditedReportText(updatedReport);
 
     try {
-      await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
+      const stepRes = await apiFetch(`/api/physician/reports/${selectedId}/review-steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          physician_id: 'physician-1',
           review_steps: updatedSteps
         })
       });
-      await apiFetch(`/api/physician/reports/${selectedId}/summary`, {
+      if (!stepRes.ok) {
+        const errData = await stepRes.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to save step review.');
+      }
+      const sumRes = await apiFetch(`/api/physician/reports/${selectedId}/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          physician_id: 'physician-1',
           clinician_summary: updatedReport
         })
       });
+      if (!sumRes.ok) {
+        const errData = await sumRes.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to update summary.');
+      }
       setReportSuccessMsg(`Step ${editingStep.step} (${editingStep.title}) amended and saved.`);
       setTimeout(() => setReportSuccessMsg(''), 4000);
       setEditingStep(null);
@@ -505,7 +525,6 @@ const PhysicianDashboard = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          physician_id: 'physician-1',
           clinician_summary: editedReportText
         })
       });
@@ -517,7 +536,7 @@ const PhysicianDashboard = () => {
             ...prev.summary,
             clinician_summary: editedReportText,
             physician_edited: true,
-            last_edited_by: 'physician-1',
+            last_edited_by: result.last_edited_by || 'physician',
             last_edited_at: result.last_edited_at || new Date().toISOString()
           }
         }));
@@ -542,15 +561,19 @@ const PhysicianDashboard = () => {
     if (!selectedId) return;
     setDownloadingFhir(true);
     try {
-      const res = await fetch(`${API_BASE}/api/abdm/fhir/${selectedId}`);
+      const res = await apiFetch(`/api/abdm/fhir/${selectedId}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to export FHIR R4 Bundle.');
+      }
       const bundle = await res.json();
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bundle, null, 2));
       const dlAnchorElem = document.createElement('a');
       dlAnchorElem.setAttribute("href", dataStr);
       dlAnchorElem.setAttribute("download", `NRCES_FHIR_R4_Bundle_${selectedId.slice(0, 8)}.json`);
       dlAnchorElem.click();
-    } catch {
-      setError('Failed to export FHIR R4 Bundle.');
+    } catch (err) {
+      setError(err.message || 'Failed to export FHIR R4 Bundle.');
     } finally {
       setDownloadingFhir(false);
     }

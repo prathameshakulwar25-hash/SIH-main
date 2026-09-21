@@ -1,5 +1,16 @@
+"""
+Clinical Intake Chat - Standalone Developer Terminal Test Tool
+==============================================================
+Interactive command-line tool for developers to simulate conversational clinical intake
+sessions and verify LLM prompts (OLDCARTS / OPQRST) without launching the full web UI.
+
+Usage:
+    python backend/clinical_intake_chat.py
+"""
+
 import os
 import sys
+
 from dotenv import load_dotenv
 
 # Ensure UTF-8 output on Windows consoles
@@ -81,14 +92,14 @@ CLINICIAN_SUMMARY_PROMPT = (
 
 def chat():
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
-    print(f"=== Clinical Intake Assistant ===")
+
+    print("=== Clinical Intake Assistant ===")
     print(f"Provider: {BASE_URL} | Model: {MODEL}")
     print("Type 'summary' when you want the clinician note, or 'quit' to exit.\n")
-    
+
     # Start the conversation
     messages.append({"role": "user", "content": "Please begin the intake."})
-    
+
     while True:
         try:
             response = client.chat.completions.create(
@@ -99,22 +110,22 @@ def chat():
         except Exception as e:
             print(f"\n[Error connecting to model: {e}]")
             break
-        
+
         assistant_reply = response.choices[0].message.content
         print(f"\nAssistant: {assistant_reply}")
         messages.append({"role": "assistant", "content": assistant_reply})
-        
+
         # Get patient input
         try:
             user_input = input("\nYou: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nExiting intake session.")
             break
-            
+
         if user_input.lower() in ["quit", "exit"]:
             print("Intake session concluded.")
             break
-            
+
         if user_input.lower() == "summary":
             # Force a clean clinician summary
             messages.append({
@@ -122,7 +133,7 @@ def chat():
                 "content": CLINICIAN_SUMMARY_PROMPT
             })
             continue
-        
+
         messages.append({"role": "user", "content": user_input})
 
 if __name__ == "__main__":

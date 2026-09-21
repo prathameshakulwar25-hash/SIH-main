@@ -51,8 +51,12 @@
 ## Tech Stack
 
 * **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Web Speech API (Bilingual TTS & STT).
-* **Backend**: FastAPI (Python 3.12), SQLite, SQLAlchemy, Pydantic v2, Uvicorn, HTTPX.
-* **Integrations**: SendGrid Mail API, Twilio REST API, FHIR R4 Bundle Builder.
+* **Backend**: FastAPI (Python 3.12), PostgreSQL (Production) / SQLite (Local Dev), SQLAlchemy, Pydantic v2, PyJWT, Uvicorn, HTTPX.
+* **Integrations**: SendGrid Mail API, Twilio REST API, MSG91, ABDM M1/M2 Gateway, HL7 FHIR R4 Bundle Builder.
+
+### Database Operational Modes
+* **Production (`ENV_MODE=production`)**: Connects strictly to PostgreSQL (e.g. Supabase, AWS RDS, Neon) via `DATABASE_URL`. Fails fast on startup if connection cannot be established.
+* **Development (`ENV_MODE=development`)**: Automatically falls back to local SQLite (`backend/data/ayush.db`) when a PostgreSQL connection is not configured.
 
 ---
 

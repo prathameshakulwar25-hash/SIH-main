@@ -1,18 +1,23 @@
+import json
+import logging
+import os
 import random
 import time
-import uuid
-import json
-import os
-import urllib.request
 import urllib.error
-from typing import Dict, Any, Optional
+import urllib.request
+import uuid
+from typing import Any, Dict, Optional
+
+from config import settings
+
+logger = logging.getLogger("abdm_service")
 
 # ── ABDM Gateway Configuration ──
 # To connect to live Government of India ABDM / UIDAI servers:
 # Register free at https://sandbox.abdm.gov.in and set ABDM_CLIENT_ID and ABDM_CLIENT_SECRET
-ABDM_CLIENT_ID = os.environ.get("ABDM_CLIENT_ID", "")
-ABDM_CLIENT_SECRET = os.environ.get("ABDM_CLIENT_SECRET", "")
-ABDM_BASE_URL = os.environ.get("ABDM_BASE_URL", "https://dev.abdm.gov.in/gateway")
+ABDM_CLIENT_ID = settings.ABDM_CLIENT_ID
+ABDM_CLIENT_SECRET = settings.ABDM_CLIENT_SECRET
+ABDM_BASE_URL = settings.ABDM_BASE_URL
 
 # In-memory session cache for NHA Gateway OAuth Token
 ABDM_AUTH_CACHE = {
@@ -141,7 +146,7 @@ def get_live_abdm_access_token() -> Optional[str]:
             "clientId": ABDM_CLIENT_ID,
             "clientSecret": ABDM_CLIENT_SECRET
         }).encode("utf-8")
-        
+
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
@@ -152,7 +157,7 @@ def get_live_abdm_access_token() -> Optional[str]:
                 ABDM_AUTH_CACHE["expires_at"] = now + expires_in
                 return token
     except Exception as e:
-        print(f"[ABDM Live Gateway] Could not get session token: {e}")
+        logger.debug("[ABDM Live Gateway] Could not get session token: %s", e)
         return None
 
 def generate_random_abha_number() -> str:
@@ -178,13 +183,16 @@ def generate_aadhaar_otp(aadhaar_raw: str) -> Dict[str, Any]:
     txn_id = f"TXN-ABDM-{uuid.uuid4().hex[:12].upper()}"
     # Match existing sample or generate synthetic match
     matched_sample = next((s for s in SAMPLE_ABDM_PROFILES if s["aadhaar"] == clean_aadhaar), None)
-    
+
     # Generate cryptographically random 6-digit OTP
     otp = f"{random.randint(100000, 999999)}"
 
     masked_mobile = "XXXXXX" + (matched_sample["mobile"][-4:] if matched_sample else "7890")
-    print(f"[ABDM GATEWAY DISPATCH] Aadhaar OTP for {clean_aadhaar[:4]}****{clean_aadhaar[-4:]}: {otp}")
-    
+    if settings.is_production:
+        logger.debug("[ABDM GATEWAY DISPATCH] Aadhaar OTP dispatched to %s****%s (OTP value masked in production)", clean_aadhaar[:4], clean_aadhaar[-4:])
+    else:
+        logger.debug("[ABDM GATEWAY DISPATCH] Aadhaar OTP for %s****%s: %s", clean_aadhaar[:4], clean_aadhaar[-4:], otp)
+
     ABDM_TXN_STORE[txn_id] = {
         "auth_mode": "AADHAAR",
         "identifier": clean_aadhaar,
@@ -230,10 +238,10 @@ def verify_aadhaar_otp(txn_id: str, otp_entered: str) -> Dict[str, Any]:
         full_name = f"{fname} {lname}"
         gender = "M" if fname in ["Arjun", "Siddharth", "Rohan", "Vikram"] else "F"
         yob = str(random.randint(1975, 2002))
-        
+
         abha_num = generate_random_abha_number()
         username = f"{fname.lower()}.{lname.lower()}{random.randint(10, 99)}"
-        
+
         profile = {
             "aadhaar": clean_aadhaar,
             "name": full_name,
@@ -271,7 +279,7 @@ def verify_aadhaar_otp(txn_id: str, otp_entered: str) -> Dict[str, Any]:
         "message": "Aadhaar verified successfully. ABHA Health ID active.",
         "profile": profile,
         "qr_payload": qr_payload,
-        "jwt_token": f"eyJhYmRtX3Rva2VuIjoie3V1aWQudXVpZDQoKS5oZXh9In0",
+        "jwt_token": "eyJhYmRtX3Rva2VuIjoie3V1aWQudXVpZDQoKS5oZXh9In0",
         "auth_status": "AUTHENTICATED_AADHAAR_DEMO"
     }
 
@@ -283,7 +291,10 @@ def generate_mobile_otp(mobile_raw: str) -> Dict[str, Any]:
 
     txn_id = f"TXN-MOB-{uuid.uuid4().hex[:12].upper()}"
     otp = f"{random.randint(100000, 999999)}"
-    print(f"[ABDM GATEWAY DISPATCH] Mobile OTP for +91 {clean_mobile}: {otp}")
+    if settings.is_production:
+        logger.debug("[ABDM GATEWAY DISPATCH] Mobile OTP dispatched to +91 %s (OTP value masked in production)", clean_mobile)
+    else:
+        logger.debug("[ABDM GATEWAY DISPATCH] Mobile OTP for +91 %s: %s", clean_mobile, otp)
 
     ABDM_TXN_STORE[txn_id] = {
         "auth_mode": "MOBILE",
@@ -344,7 +355,7 @@ def verify_mobile_otp(txn_id: str, otp_entered: str, user_details: Optional[Dict
         "success": True,
         "message": "Mobile authenticated. ABHA Profile created.",
         "profile": profile,
-        "jwt_token": f"eyJhYmRtX21vYmlsZV90b2tlbiI6InN1Y2Nlc3MifQ"
+        "jwt_token": "eyJhYmRtX21vYmlsZV90b2tlbiI6InN1Y2Nlc3MifQ"
     }
 
 def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
@@ -366,16 +377,16 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
         clean_p_mob = p.get("mobile", "")
         clean_p_adh = p.get("aadhaar", "")
 
-        if (clean_p_abha == q.replace("-", "") or 
-            clean_p_addr == q or 
-            (digits and digits == clean_p_mob) or 
+        if (clean_p_abha == q.replace("-", "") or
+            clean_p_addr == q or
+            (digits and digits == clean_p_mob) or
             (digits and digits == clean_p_adh) or
             (digits and len(digits) >= 10 and digits in clean_p_abha)):
             return dict(p)
 
     # 2. Check Database for an existing patient encounter with this ABHA
     try:
-        from main import SessionLocal, ConsentRecord
+        from main import ConsentRecord, SessionLocal
         db = SessionLocal()
         try:
             query = db.query(ConsentRecord).filter(
@@ -399,7 +410,7 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
                 }
         finally:
             db.close()
-    except Exception as e:
+    except Exception:
         # Fallback to local SQLite if direct SessionLocal was not available
         try:
             import sqlite3
@@ -440,21 +451,21 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
     if len(digits) >= 10 or "@" in raw_clean or len(raw_clean) >= 8:
         import hashlib
         seed_int = int(hashlib.md5(raw_clean.encode("utf-8")).hexdigest()[:8], 16)
-        
+
         first_names_m = ["Rajesh", "Vikram", "Sunil", "Arjun", "Kunal", "Manoj", "Sanjay", "Deepak", "Alok", "Pradeep"]
         first_names_f = ["Pooja", "Meera", "Ananya", "Sneha", "Kavita", "Ritu", "Sunita", "Neha", "Shweta", "Divya"]
         last_names = ["Sharma", "Verma", "Patel", "Gupta", "Singh", "Kumar", "Iyer", "Joshi", "Deshmukh", "Choudhury"]
-        
+
         is_female = (seed_int % 2) == 1
         fname = first_names_f[seed_int % len(first_names_f)] if is_female else first_names_m[seed_int % len(first_names_m)]
         lname = last_names[(seed_int // 10) % len(last_names)]
         full_name = f"{fname} {lname}"
-        
+
         yob = 1965 + (seed_int % 35) # between 1965 and 2000
         mob_month = 1 + (seed_int % 12)
         mob_day = 1 + (seed_int % 28)
         dob_str = f"{yob}-{mob_month:02d}-{mob_day:02d}"
-        
+
         # Formatted 14-digit ABHA
         if len(digits) == 14:
             clean_abha = f"{digits[0:2]}-{digits[2:6]}-{digits[6:10]}-{digits[10:14]}"
@@ -463,11 +474,11 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
             clean_abha = f"{pad[0:2]}-{pad[2:6]}-{pad[6:10]}-{pad[10:14]}"
         else:
             clean_abha = f"{(seed_int % 90 + 10)}-{(seed_int * 7) % 9000 + 1000}-{(seed_int * 13) % 9000 + 1000}-{(seed_int * 19) % 9000 + 1000}"
-            
+
         handle = raw_clean if "@" in raw_clean else f"{fname.lower()}.{lname.lower()}{(seed_int % 90 + 10)}@abdm"
         generated_mobile = f"98{(seed_int % 89999999 + 10000000)}"
         email_str = f"{fname.lower()}.{lname.lower()}@example.com"
-        
+
         cities = [
             ("Delhi", "New Delhi", "110001"),
             ("Maharashtra", "Pune", "411038"),
@@ -477,7 +488,7 @@ def search_abha_by_id(query: str) -> Optional[Dict[str, Any]]:
             ("Gujarat", "Ahmedabad", "380009")
         ]
         city_tuple = cities[seed_int % len(cities)]
-        
+
         return {
             "name": full_name,
             "gender": "F" if is_female else "M",

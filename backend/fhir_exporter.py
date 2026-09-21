@@ -1,48 +1,49 @@
-from fhir.resources.bundle import Bundle, BundleEntry
-from fhir.resources.patient import Patient
-from fhir.resources.consent import Consent
-from fhir.resources.observation import Observation
-from fhir.resources.documentreference import DocumentReference, DocumentReferenceContent
+import base64
+import datetime
+from typing import Optional
+
 from fhir.resources.attachment import Attachment
+from fhir.resources.bundle import Bundle, BundleEntry
 from fhir.resources.codeableconcept import CodeableConcept
 from fhir.resources.coding import Coding
-from fhir.resources.reference import Reference
-from fhir.resources.meta import Meta
+from fhir.resources.consent import Consent
+from fhir.resources.documentreference import DocumentReference, DocumentReferenceContent
 from fhir.resources.identifier import Identifier
-import uuid
-import datetime
-import base64
-from typing import Optional, Dict, Any
+from fhir.resources.meta import Meta
+from fhir.resources.observation import Observation
+from fhir.resources.patient import Patient
+from fhir.resources.reference import Reference
+
 
 def generate_fhir_bundle(
-    session_id: str, 
-    abha_id: str, 
-    intake_triage: Optional[dict] = None, 
+    session_id: str,
+    abha_id: str,
+    intake_triage: Optional[dict] = None,
     documents_data: Optional[dict] = None,
     ayush_profile: Optional[dict] = None,
     encounter_summary: Optional[dict] = None,
     patient_meta: Optional[dict] = None
 ) -> dict:
     """
-    Generates an official NRCES (National Resource Centre for EHR Standards) 
+    Generates an official NRCES (National Resource Centre for EHR Standards)
     & NDHM/ABDM compliant HL7 FHIR R4 Bundle for the clinical encounter.
     """
     bundle = Bundle(
-        type="collection", 
+        type="collection",
         entry=[],
         meta=Meta(
             profile=["https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"],
             lastUpdated=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
     )
-    
+
     # 1. Patient Resource
     patient_id = f"patient-{session_id}"
     patient = Patient(
         id=patient_id,
         identifier=[
             Identifier(
-                system="https://healthid.ndhm.gov.in", 
+                system="https://healthid.ndhm.gov.in",
                 value=abha_id or "ABHA-UNVERIFIED"
             )
         ],
@@ -57,7 +58,7 @@ def generate_fhir_bundle(
         patient.birthDate = patient_meta["dob"]
 
     bundle.entry.append(BundleEntry(fullUrl=f"urn:uuid:{patient_id}", resource=patient))
-    
+
     # 2. Consent Resource (ABDM Consent Record)
     consent_id = f"consent-{session_id}"
     consent = Consent(
