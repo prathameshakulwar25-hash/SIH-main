@@ -18,6 +18,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
+from firebase_service import is_firebase_ready, send_fcm_multicast, send_fcm_push, verify_firebase_id_token
 from flow_engine import FLOW_STEPS
 from grok_service import normalize_clinical_complaint
 from report_notifier import send_email_dispatcher, send_sms_dispatcher
@@ -217,14 +218,19 @@ engine = None
 
 if raw_db_url:
     try:
-        # Modern SQLAlchemy 1.4+ expects postgresql:// instead of postgres://
+        # Modern SQLAlchemy 2.x with psycopg3: use postgresql+psycopg:// dialect
+        # Convert legacy postgres:// and plain postgresql:// to explicit psycopg3 dialect
         if raw_db_url.startswith("postgres://"):
-            raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+            raw_db_url = raw_db_url.replace("postgres://", "postgresql+psycopg://", 1)
+        elif raw_db_url.startswith("postgresql://") and "+psycopg" not in raw_db_url:
+            raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
         DATABASE_URL = raw_db_url
 
+        # psycopg3 uses connect_timeout; SSL is handled via the URL query string
         connect_args = {"connect_timeout": 10}
-        if "sslmode" not in DATABASE_URL and "supabase" in DATABASE_URL:
-            connect_args["sslmode"] = "require"
+        # For Supabase: ensure sslmode is in the URL, not connect_args (psycopg3 compatibility)
+        if "supabase" in DATABASE_URL and "sslmode" not in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL + ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
 
         engine = create_engine(
             DATABASE_URL,
@@ -321,6 +327,16 @@ class Document(Base):
     parsed_data = Column(JSON)
     timestamp = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
 
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, index=True)
+    session_id = Column(String, index=True, nullable=True)
+    phone = Column(String, index=True, nullable=True)
+    role = Column(String, default="patient")
+    user_agent = Column(String, nullable=True)
+    timestamp = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
+
 try:
     Base.metadata.create_all(bind=engine)
 except Exception as e:
@@ -355,6 +371,8 @@ try:
                 conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN critical INTEGER DEFAULT 0"))
             if "red_flags" not in pr_cols and pr_cols:
                 conn.execute(text("ALTER TABLE physician_reviews ADD COLUMN red_flags JSON"))
+        if not inspector.has_table("device_tokens"):
+            DeviceToken.__table__.create(bind=engine, checkfirst=True)
         conn.commit()
 except Exception as e:
     print(f"Notice: Schema migration check: {e}")
@@ -911,12 +929,19 @@ def send_report_endpoint(session_id: str, req: Optional[SendReportRequest] = Non
     # Retrieve full encounter data
     encounter_data = get_summary(session_id, db)
 
-    # Dispatch report via configured notification channels
+    # Check for registered push notification device token
+    target_device = db.query(DeviceToken).filter(
+        (DeviceToken.session_id == session_id) | (DeviceToken.phone == target_phone)
+    ).order_by(DeviceToken.id.desc()).first()
+    fcm_token = target_device.token if target_device else None
+
+    # Dispatch report via configured notification channels (Email, SMS, and FCM Web Push)
     result = dispatch_clinical_report(
         session_id=session_id,
         encounter_data=encounter_data,
         email=target_email,
-        phone=target_phone
+        phone=target_phone,
+        fcm_token=fcm_token
     )
     return result
 
@@ -1971,6 +1996,173 @@ def verify_msg91_widget_token(req: Msg91WidgetVerifyRequest, db: Session = Depen
         "access_token": token,
         "token_type": "bearer"
     }
+
+class FirebaseVerifyRequest(BaseModel):
+    id_token: str
+    name: Optional[str] = "Patient"
+    mobile: Optional[str] = None
+    abha_id: Optional[str] = None
+    role: Optional[str] = "patient"
+    channel: Optional[str] = "kiosk"
+
+@auth_router.post("/firebase/verify-token")
+def verify_firebase_auth_token(req: FirebaseVerifyRequest, db: Session = Depends(get_db)):
+    """
+    Verifies Firebase Phone Auth ID token from frontend.
+    Extracts verified phone number, creates/links patient encounter session,
+    and returns Jeevan JWT.
+    """
+    ok, decoded, detail = verify_firebase_id_token(req.id_token)
+    if not ok or not decoded:
+        raise HTTPException(status_code=401, detail=f"Firebase authentication failed: {detail}")
+
+    verified_phone = decoded.get("phone_number") or req.mobile or ""
+    clean_mobile = re.sub(r"\D", "", verified_phone)
+    if len(clean_mobile) > 10 and clean_mobile.startswith("91"):
+        clean_mobile = clean_mobile[2:]
+
+    name = (req.name or "Patient").strip()
+    session_id = f"session-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+    effective_abha = req.abha_id.strip() if req.abha_id and req.abha_id.strip() else f"ABHA-{int(time.time())}"
+    channel = req.channel or "kiosk"
+    token_number = generate_opd_token(db, channel)
+
+    if req.role == "physician":
+        token = create_access_token({
+            "sub": "physician-1",
+            "role": "physician",
+            "physician_id": "physician-1",
+            "name": "Dr. Sharma (MD, Clinical OPD)",
+            "department": "AYUSH & General OPD"
+        }, expires_delta=28800)
+        return {
+            "status": "authenticated",
+            "role": "physician",
+            "physician_id": "physician-1",
+            "name": "Dr. Sharma (MD, Clinical OPD)",
+            "department": "AYUSH & General OPD",
+            "access_token": token,
+            "token_type": "bearer"
+        }
+
+    meta = SessionMeta(session_id=session_id)
+    db.add(meta)
+    db.commit()
+
+    consent = ConsentRecord(
+        session_id=session_id,
+        abha_id=effective_abha,
+        name=name,
+        phone=clean_mobile,
+        status="granted",
+        profile_data={
+            "source": "firebase-phone-auth",
+            "firebase_uid": decoded.get("uid"),
+            "mobile": clean_mobile,
+            "phone_raw": verified_phone,
+            "verified": True,
+            "channel": channel,
+            "token_number": token_number
+        }
+    )
+    db.add(consent)
+    db.commit()
+
+    token = create_access_token({
+        "sub": session_id,
+        "role": "patient",
+        "session_id": session_id,
+        "name": name,
+        "mobile": clean_mobile,
+        "abha_id": effective_abha
+    }, expires_delta=14400)
+
+    return {
+        "status": "authenticated",
+        "role": "patient",
+        "session_id": session_id,
+        "patient_name": name,
+        "mobile": clean_mobile,
+        "abha_id": effective_abha,
+        "consent_granted": True,
+        "token_number": token_number,
+        "channel": channel,
+        "access_token": token,
+        "token_type": "bearer",
+        "provider": "firebase_auth"
+    }
+
+class RegisterDeviceRequest(BaseModel):
+    fcm_token: str
+    session_id: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[str] = "patient"
+    user_agent: Optional[str] = None
+
+class TestPushRequest(BaseModel):
+    fcm_token: Optional[str] = None
+    session_id: Optional[str] = None
+    title: Optional[str] = "Jeevan Health Alert"
+    body: Optional[str] = "Your clinical encounter report is ready."
+
+@app.post("/api/notifications/register-device")
+def register_device_token(req: RegisterDeviceRequest, db: Session = Depends(get_db)):
+    if not req.fcm_token or not req.fcm_token.strip():
+        raise HTTPException(status_code=400, detail="fcm_token cannot be empty.")
+    
+    token_str = req.fcm_token.strip()
+    existing = db.query(DeviceToken).filter(DeviceToken.token == token_str).first()
+    if existing:
+        if req.session_id:
+            existing.session_id = req.session_id
+        if req.phone:
+            existing.phone = req.phone
+        if req.role:
+            existing.role = req.role
+        if req.user_agent:
+            existing.user_agent = req.user_agent
+        db.commit()
+        return {"status": "success", "message": "Device token updated."}
+    
+    new_device = DeviceToken(
+        token=token_str,
+        session_id=req.session_id,
+        phone=req.phone,
+        role=req.role or "patient",
+        user_agent=req.user_agent
+    )
+    db.add(new_device)
+    db.commit()
+    return {"status": "success", "message": "Device token registered."}
+
+@app.post("/api/notifications/test-push")
+def test_push_notification(req: TestPushRequest, db: Session = Depends(get_db)):
+    target_token = req.fcm_token
+    if not target_token and req.session_id:
+        dev = db.query(DeviceToken).filter(DeviceToken.session_id == req.session_id).order_by(DeviceToken.id.desc()).first()
+        if dev:
+            target_token = dev.token
+    
+    if not target_token:
+        dev = db.query(DeviceToken).order_by(DeviceToken.id.desc()).first()
+        if dev:
+            target_token = dev.token
+
+    if not target_token:
+        return {
+            "status": "warning",
+            "sent": False,
+            "message": "No registered device token found. Please grant notification permission in your browser first."
+        }
+
+    ok, detail = send_fcm_push(
+        fcm_token=target_token,
+        title=req.title or "Jeevan Health Alert",
+        body=req.body or "This is a test notification from Jeevan OPD.",
+        data={"click_action": "/patient-home", "session_id": req.session_id or ""}
+    )
+    return {"status": "success" if ok else "error", "sent": ok, "detail": detail}
+
 
 app.include_router(auth_router)
 app.include_router(consent_router)
