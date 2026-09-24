@@ -75,6 +75,10 @@ class Settings:
     MSG91_WIDGET_ID: str
     MSG91_TOKEN_AUTH: str
 
+    # ── Firebase Admin & Cloud Messaging ──
+    FIREBASE_SERVICE_ACCOUNT_PATH: str
+    FIREBASE_PROJECT_ID: str
+
     @property
     def is_production(self) -> bool:
         return self.ENV_MODE.lower() == "production"
@@ -160,6 +164,8 @@ def load_settings() -> Settings:
         MSG91_OTP_TEMPLATE_ID=os.environ.get("MSG91_OTP_TEMPLATE_ID", "").strip(),
         MSG91_WIDGET_ID=os.environ.get("MSG91_WIDGET_ID", "").strip(),
         MSG91_TOKEN_AUTH=os.environ.get("MSG91_TOKEN_AUTH", "").strip(),
+        FIREBASE_SERVICE_ACCOUNT_PATH=os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH", "firebase-service-account.json").strip(),
+        FIREBASE_PROJECT_ID=os.environ.get("FIREBASE_PROJECT_ID", "").strip(),
     )
 
 

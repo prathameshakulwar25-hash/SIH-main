@@ -10,6 +10,7 @@ import { JeevanBrand } from '../components/JeevanLogo';
 import { API_BASE, getApiBase } from '../config/api';
 import ServerConfigModal from '../components/ServerConfigModal';
 import KioskScanAndSitModal from '../components/KioskScanAndSitModal';
+import { sendFirebasePhoneOtp, isFirebaseConfigured, registerDevicePushToken } from '../firebase';
 
 const PHYSICIAN_PIN = '1234';
 
@@ -184,6 +185,7 @@ const Landing = () => {
   const [otpCode, setOtpCode] = useState('');
   const [demoOtp, setDemoOtp] = useState('');
   const [resendTimer, setResendTimer] = useState(30);
+  const [isFirebaseSession, setIsFirebaseSession] = useState(false);
 
   // Physician States
   const [doctorPin, setDoctorPin] = useState('');
@@ -275,6 +277,38 @@ const Landing = () => {
   }, [abhaInput, patientMethod]);
 
   // --- 1. Mobile OTP Handlers ---
+  const handleFirebaseSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+
+    if (!patientName.trim()) { setError(t.nameRequired); return; }
+    const cleanMobile = patientMobile.replace(/\D/g, '');
+    if (cleanMobile.length !== 10) { setError(t.mobileRequired); return; }
+
+    if (!isFirebaseConfigured()) {
+      setError('Firebase credentials not set in frontend/.env. Falling back to backend OTP dispatcher.');
+      handleMobileSendOtp();
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendFirebasePhoneOtp(cleanMobile, 'firebase-recaptcha-container');
+      setIsFirebaseSession(true);
+      setOtpStep(true);
+      setDemoOtp(''); // live SMS sent to user's phone
+      setResendTimer(60);
+      setSuccessMsg(`Live SMS OTP sent to +91 ${cleanMobile} via Firebase Phone Auth! Check your handset.`);
+    } catch (err) {
+      console.warn('[Firebase Phone Auth error]', err);
+      setError(err?.message || 'Failed to send SMS via Firebase. Trying backend dispatcher...');
+      handleMobileSendOtp();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleMobileSendOtp = async (e) => {
     if (e) e.preventDefault();
     setError('');
@@ -284,6 +318,7 @@ const Landing = () => {
     const cleanMobile = patientMobile.replace(/\D/g, '');
     if (cleanMobile.length !== 10) { setError(t.mobileRequired); return; }
 
+    setIsFirebaseSession(false);
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/patient/send-otp`, {
@@ -320,6 +355,65 @@ const Landing = () => {
     resetState();
     const cleanMobile = patientMobile.replace(/\D/g, '');
 
+    // 1. If this was initiated via Firebase Phone Auth
+    if (isFirebaseSession && window.confirmationResult) {
+      try {
+        const userCred = await window.confirmationResult.confirm(cleanOtp);
+        const idToken = await userCred.user.getIdToken();
+
+        const res = await fetch(`${API_BASE}/api/auth/firebase/verify-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id_token: idToken,
+            name: patientName.trim(),
+            mobile: cleanMobile,
+            channel: isMobileQr ? 'mobile_qr' : 'kiosk'
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'authenticated') {
+          const tokenNum = data.token_number || (isMobileQr ? 'M-01' : 'K-01');
+          const channelUsed = data.channel || (isMobileQr ? 'mobile_qr' : 'kiosk');
+          sessionStorage.setItem('session_id', data.session_id);
+          sessionStorage.setItem('token_number', tokenNum);
+          sessionStorage.setItem('intake_channel', channelUsed);
+          if (data.access_token) {
+            sessionStorage.setItem('auth_token', data.access_token);
+          }
+          registerDevicePushToken({
+            apiBase: API_BASE,
+            sessionId: data.session_id,
+            phone: cleanMobile,
+            role: 'patient'
+          });
+
+          updateState({
+            role: 'patient',
+            token: data.access_token,
+            patientName: data.patient_name || patientName.trim(),
+            session_id: data.session_id,
+            abha_id: data.abha_id,
+            mobile: cleanMobile,
+            consent_granted: false,
+            language: lang,
+            token_number: tokenNum,
+            intake_channel: channelUsed
+          });
+          navigate('/patient-home');
+          return;
+        } else {
+          setError(data.detail || 'Firebase verification on server failed.');
+        }
+      } catch (err) {
+        console.warn('[Firebase Verification Error]', err);
+        setError(err?.message || 'Invalid SMS verification code. Please check and retry.');
+        setLoading(false);
+        return;
+      }
+    }
+
+    // 2. Standard backend OTP verification fallback
     try {
       const res = await fetch(`${API_BASE}/api/auth/patient/verify-otp`, {
         method: 'POST',
@@ -341,6 +435,12 @@ const Landing = () => {
         if (data.access_token) {
           sessionStorage.setItem('auth_token', data.access_token);
         }
+        registerDevicePushToken({
+          apiBase: API_BASE,
+          sessionId: data.session_id,
+          phone: cleanMobile,
+          role: 'patient'
+        });
         updateState({
           role: 'patient',
           token: data.access_token,
@@ -867,33 +967,48 @@ const Landing = () => {
                         </div>
                       </div>
 
+                      {/* Invisible container for Firebase Phone Auth reCAPTCHA */}
+                      <div id="firebase-recaptcha-container"></div>
+
                       <div className="space-y-2 pt-1">
                         <button
-                          type="submit"
+                          type="button"
+                          onClick={handleFirebaseSendOtp}
                           disabled={loading}
-                          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-200 hover:shadow-teal-300 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
+                          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-200 hover:shadow-teal-300 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
                         >
-                          {loading ? (
+                          {loading && isFirebaseSession ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Sending OTP…</span>
+                              <span>Sending Real SMS OTP…</span>
                             </>
                           ) : (
                             <>
-                              <span>{t.sendOtpBtn}</span>
+                              <Smartphone className="w-4 h-4" />
+                              <span>Send Real SMS OTP (Firebase Auth)</span>
                               <ArrowRight className="w-4 h-4" />
                             </>
                           )}
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={launchMsg91SendOtpWidget}
-                          className="w-full py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                          <span>Verify with MSG91 SendOTP Widget (WhatsApp / SMS)</span>
-                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          >
+                            <span>Standard OTP</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={launchMsg91SendOtpWidget}
+                            className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                            <span>MSG91 Widget</span>
+                          </button>
+                        </div>
                       </div>
                     </form>
                   ) : (
@@ -913,8 +1028,20 @@ const Landing = () => {
                         </button>
                       </div>
 
+                      {isFirebaseSession && (
+                        <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2.5">
+                          <Smartphone className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold">Real SMS Sent via Firebase:</span>
+                            <p className="text-[11px] text-amber-800 mt-0.5">
+                              Please check your mobile handset for the 6-digit verification SMS from Google/Firebase and enter it below.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Generated Code Display Card */}
-                      {demoOtp && (
+                      {!isFirebaseSession && demoOtp && (
                         <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 text-emerald-900">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
@@ -961,7 +1088,7 @@ const Landing = () => {
                         <button
                           type="button"
                           disabled={resendTimer > 0 || loading}
-                          onClick={() => handleMobileSendOtp()}
+                          onClick={() => (isFirebaseSession ? handleFirebaseSendOtp() : handleMobileSendOtp())}
                           className="text-teal-600 hover:text-teal-800 disabled:text-slate-300 disabled:cursor-not-allowed font-bold transition cursor-pointer"
                         >
                           {t.resendOtp}

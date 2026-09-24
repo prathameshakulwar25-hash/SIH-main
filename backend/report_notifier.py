@@ -472,24 +472,35 @@ def send_sms_dispatcher(to_phone: str, message_body: str) -> Dict[str, Any]:
         "detail": f"Simulated SMS to {to_phone} (Set TWILIO_ACCOUNT_SID or MSG91_AUTH_KEY in .env to activate live dispatch)"
     }
 
+def send_fcm_notification(fcm_token: str, title: str, body: str, data: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Dispatches a Web Push notification to the client device via Firebase Cloud Messaging."""
+    try:
+        from firebase_service import send_fcm_push
+        ok, detail = send_fcm_push(fcm_token, title, body, data)
+        return {"sent": ok, "provider": "firebase_fcm", "detail": detail}
+    except Exception as e:
+        return {"sent": False, "provider": "firebase_fcm", "error": str(e)}
+
 # ── Master Dispatcher for Clinical Encounter Report ──
 def dispatch_clinical_report(
     session_id: str,
     encounter_data: Dict[str, Any],
     email: Optional[str] = None,
-    phone: Optional[str] = None
+    phone: Optional[str] = None,
+    fcm_token: Optional[str] = None
 ) -> Dict[str, Any]:
     results = {
         "status": "success",
         "session_id": session_id,
         "email": None,
         "sms": None,
+        "push": None,
         "summary_message": ""
     }
 
-    if not email and not phone:
+    if not email and not phone and not fcm_token:
         results["status"] = "skipped"
-        results["summary_message"] = "No patient email or phone number provided. Dispatch skipped."
+        results["summary_message"] = "No patient contact (email, phone, or push token) provided. Dispatch skipped."
         return results
 
     patient_name = encounter_data.get("patient_name") or encounter_data.get("patient_details", {}).get("name") or "Patient"
@@ -512,6 +523,15 @@ def dispatch_clinical_report(
         if not sms_res.get("sent"):
             results["status"] = "partial" if results["status"] == "success" else "error"
 
+    # 3. Send Web Push notification if FCM token provided
+    if fcm_token:
+        push_title = f"Report Verified: {patient_name}"
+        push_body = f"Your clinical OPD assessment is verified by physician. Tap to view summary."
+        push_res = send_fcm_notification(fcm_token, push_title, push_body, {"session_id": session_id, "click_action": "/patient-home"})
+        results["push"] = push_res
+        if not push_res.get("sent"):
+            results["status"] = "partial" if results["status"] == "success" else "error"
+
     # Build human-readable summary message
     parts = []
     if results["email"]:
@@ -527,6 +547,12 @@ def dispatch_clinical_report(
             parts.append(f"SMS sent to {phone}{sim_note}")
         else:
             parts.append(f"SMS delivery failed ({results['sms'].get('error') or results['sms'].get('detail')})")
+
+    if results["push"]:
+        if results["push"].get("sent"):
+            parts.append("Push notification sent to device")
+        else:
+            parts.append(f"Push delivery failed ({results['push'].get('error') or results['push'].get('detail')})")
 
     results["summary_message"] = " and ".join(parts) if parts else "No notifications sent."
     return results
