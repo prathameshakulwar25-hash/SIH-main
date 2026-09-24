@@ -168,7 +168,7 @@ const Landing = () => {
   // Primary Tab: 'patient' | 'physician'
   const [activeTab, setActiveTab] = useState('patient');
   const [showKioskModal, setShowKioskModal] = useState(false);
-  
+
   // Patient Login Method: 'mobile' | 'abha' | 'email'
   const [patientMethod, setPatientMethod] = useState('mobile');
 
@@ -842,22 +842,20 @@ const Landing = () => {
           <div className="flex bg-slate-200/70 p-1 rounded-2xl mb-3 shadow-inner">
             <button
               onClick={() => handleTabSwitch('patient')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                activeTab === 'patient'
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${activeTab === 'patient'
                   ? 'bg-white text-teal-900 shadow-sm border border-slate-200'
                   : 'text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               <HeartPulse className="w-4 h-4 text-teal-600" />
               <span>{t.patientTab}</span>
             </button>
             <button
               onClick={() => handleTabSwitch('physician')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                activeTab === 'physician'
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${activeTab === 'physician'
                   ? 'bg-white text-indigo-900 shadow-sm border border-slate-200'
                   : 'text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               <Stethoscope className="w-4 h-4 text-indigo-600" />
               <span>{t.physicianTab}</span>
@@ -866,7 +864,7 @@ const Landing = () => {
 
           {/* Card Body */}
           <div className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-3xl shadow-xl p-5 sm:p-6 text-left transition-all">
-            
+
             {/* Notifications */}
             {successMsg && (
               <div className="mb-4 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center gap-2 animate-in fade-in">
@@ -890,11 +888,10 @@ const Landing = () => {
                     <button
                       type="button"
                       onClick={() => handleMethodSwitch('mobile')}
-                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        patientMethod === 'mobile'
+                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${patientMethod === 'mobile'
                           ? 'bg-white text-teal-800 shadow-xs border border-slate-200'
                           : 'text-slate-500 hover:text-slate-800'
-                      }`}
+                        }`}
                     >
                       <Smartphone className="w-4 h-4 mb-0.5 text-teal-600" />
                       <span>{t.methodMobile}</span>
@@ -903,11 +900,10 @@ const Landing = () => {
                     <button
                       type="button"
                       onClick={() => handleMethodSwitch('abha')}
-                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        patientMethod === 'abha'
+                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${patientMethod === 'abha'
                           ? 'bg-white text-teal-800 shadow-xs border border-slate-200'
                           : 'text-slate-500 hover:text-slate-800'
-                      }`}
+                        }`}
                     >
                       <CreditCard className="w-4 h-4 mb-0.5 text-emerald-600" />
                       <span>{t.methodAbha}</span>
@@ -916,11 +912,10 @@ const Landing = () => {
                     <button
                       type="button"
                       onClick={() => handleMethodSwitch('email')}
-                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        patientMethod === 'email'
+                      className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${patientMethod === 'email'
                           ? 'bg-white text-teal-800 shadow-xs border border-slate-200'
                           : 'text-slate-500 hover:text-slate-800'
-                      }`}
+                        }`}
                     >
                       <Mail className="w-4 h-4 mb-0.5 text-blue-600" />
                       <span>{t.methodEmail}</span>
@@ -977,38 +972,19 @@ const Landing = () => {
                           disabled={loading}
                           className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-200 hover:shadow-teal-300 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
                         >
-                          {loading && isFirebaseSession ? (
+                          {loading ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Sending Real SMS OTP…</span>
+                              <span>Sending OTP…</span>
                             </>
                           ) : (
                             <>
                               <Smartphone className="w-4 h-4" />
-                              <span>Send Real SMS OTP (Firebase Auth)</span>
+                              <span>Send OTP</span>
                               <ArrowRight className="w-4 h-4" />
                             </>
                           )}
                         </button>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="submit"
-                            disabled={loading}
-                            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                          >
-                            <span>Standard OTP</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={launchMsg91SendOtpWidget}
-                            className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                            <span>MSG91 Widget</span>
-                          </button>
-                        </div>
                       </div>
                     </form>
                   ) : (
