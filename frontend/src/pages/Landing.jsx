@@ -356,7 +356,13 @@ const Landing = () => {
     const cleanMobile = patientMobile.replace(/\D/g, '');
 
     // 1. If this was initiated via Firebase Phone Auth
-    if (isFirebaseSession && window.confirmationResult) {
+    if (isFirebaseSession) {
+      if (!window.confirmationResult) {
+        setError('Firebase session expired. Please request a new OTP.');
+        setLoading(false);
+        return;
+      }
+
       try {
         const userCred = await window.confirmationResult.confirm(cleanOtp);
         const idToken = await userCred.user.getIdToken();
@@ -404,6 +410,8 @@ const Landing = () => {
           return;
         } else {
           setError(data.detail || 'Firebase verification on server failed.');
+          setLoading(false);
+          return;
         }
       } catch (err) {
         console.warn('[Firebase Verification Error]', err);
