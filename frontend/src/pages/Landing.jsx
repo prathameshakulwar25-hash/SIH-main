@@ -287,7 +287,6 @@ const Landing = () => {
     if (cleanMobile.length !== 10) { setError(t.mobileRequired); return; }
 
     if (!isFirebaseConfigured()) {
-      setError('Firebase credentials not set in frontend/.env. Falling back to backend OTP dispatcher.');
       handleMobileSendOtp();
       return;
     }
@@ -297,12 +296,11 @@ const Landing = () => {
       await sendFirebasePhoneOtp(cleanMobile, 'firebase-recaptcha-container');
       setIsFirebaseSession(true);
       setOtpStep(true);
-      setDemoOtp(''); // live SMS sent to user's phone
+      setDemoOtp('');
       setResendTimer(60);
-      setSuccessMsg(`Live SMS OTP sent to +91 ${cleanMobile} via Firebase Phone Auth! Check your handset.`);
+      setSuccessMsg(t.otpSentMobile ? t.otpSentMobile(cleanMobile) : `OTP sent to +91 ${cleanMobile}`);
     } catch (err) {
-      console.warn('[Firebase Phone Auth error]', err);
-      setError(err?.message || 'Failed to send SMS via Firebase. Trying backend dispatcher...');
+      console.warn('[Phone Auth Note]', err);
       handleMobileSendOtp();
     } finally {
       setLoading(false);
@@ -331,7 +329,7 @@ const Landing = () => {
         setOtpStep(true);
         setDemoOtp(data.dev_otp || data.demo_otp || '');
         setResendTimer(30);
-        setSuccessMsg(data.message || t.otpSentMobile(cleanMobile));
+        setSuccessMsg(t.otpSentMobile ? t.otpSentMobile(cleanMobile) : `OTP sent to +91 ${cleanMobile}`);
       } else {
         setError(data.detail || 'Failed to send OTP.');
       }
@@ -339,7 +337,7 @@ const Landing = () => {
       setOtpStep(true);
       setDemoOtp('123456');
       setResendTimer(30);
-      setSuccessMsg(`Simulated OTP ready for +91 ${cleanMobile}`);
+      setSuccessMsg(t.otpSentMobile ? t.otpSentMobile(cleanMobile) : `OTP sent to +91 ${cleanMobile}`);
     } finally {
       setLoading(false);
     }
@@ -358,7 +356,7 @@ const Landing = () => {
     // 1. If this was initiated via Firebase Phone Auth
     if (isFirebaseSession) {
       if (!window.confirmationResult) {
-        setError('Firebase session expired. Please request a new OTP.');
+        setError('OTP session expired. Please request a new code.');
         setLoading(false);
         return;
       }
@@ -409,13 +407,20 @@ const Landing = () => {
           navigate('/patient-home');
           return;
         } else {
-          setError(data.detail || 'Firebase verification on server failed.');
+          setError(data.detail || 'Verification failed. Please check the code and try again.');
           setLoading(false);
           return;
         }
       } catch (err) {
-        console.warn('[Firebase Verification Error]', err);
-        setError(err?.message || 'Invalid SMS verification code. Please check and retry.');
+        console.warn('[Verification Error]', err);
+        const code = err?.code || '';
+        let msg = 'Invalid verification code. Please check and retry.';
+        if (code === 'auth/invalid-verification-code' || err?.message?.includes('invalid-verification-code')) {
+          msg = 'Incorrect verification code. Please check and try again.';
+        } else if (code === 'auth/code-expired') {
+          msg = 'Verification code has expired. Please request a new code.';
+        }
+        setError(msg);
         setLoading(false);
         return;
       }
@@ -502,7 +507,7 @@ const Landing = () => {
       setOtpStep(true);
       setDemoOtp('123456');
       setResendTimer(30);
-      setSuccessMsg(`Simulated OTP ready for ${email}`);
+      setSuccessMsg(t.otpSentEmail ? t.otpSentEmail(email) : `OTP sent to ${email}`);
     } finally {
       setLoading(false);
     }
@@ -1012,17 +1017,6 @@ const Landing = () => {
                         </button>
                       </div>
 
-                      {isFirebaseSession && (
-                        <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2.5">
-                          <Smartphone className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold">Real SMS Sent via Firebase:</span>
-                            <p className="text-[11px] text-amber-800 mt-0.5">
-                              Please check your mobile handset for the 6-digit verification SMS from Google/Firebase and enter it below.
-                            </p>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Generated Code Display Card */}
                       {!isFirebaseSession && demoOtp && (

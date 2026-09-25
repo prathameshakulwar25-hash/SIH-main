@@ -2014,7 +2014,7 @@ def verify_firebase_auth_token(req: FirebaseVerifyRequest, db: Session = Depends
     """
     ok, decoded, detail = verify_firebase_id_token(req.id_token)
     if not ok or not decoded:
-        raise HTTPException(status_code=401, detail=f"Firebase authentication failed: {detail}")
+        raise HTTPException(status_code=401, detail="Authentication failed. Please check your verification code and try again.")
 
     verified_phone = decoded.get("phone_number") or req.mobile or ""
     clean_mobile = re.sub(r"\D", "", verified_phone)
